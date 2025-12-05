@@ -65,11 +65,15 @@ Each facility includes:
 
 ## Installation
 
-### From GitHub (recommended for latest version)
+### From GitHub
 
-1. Download the latest `.jmo` file from the [Releases](../../releases) page
+**Pre-built module (macOS only):**
+
+1. Download the `.jmo` file from the [Releases](../../releases) page
 2. In jamovi, go to **Modules** → **jamovi library** → **Sideload** (⋮ menu)
 3. Select the downloaded `.jmo` file
+
+> ⚠️ **Note:** The pre-built `.jmo` file was compiled on macOS and will only work on macOS systems. Windows and Linux users will need to build the module from source using `jmvtools::install()` in R, or wait for the module to become available in the jamovi library.
 
 ### From jamovi Module Library
 
