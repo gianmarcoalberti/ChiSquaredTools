@@ -65,24 +65,47 @@ Each facility includes:
 
 ## Installation
 
-### From GitHub
+### From jamovi Module Library
 
-**Pre-built module (macOS only):**
+*(Coming soon — pending submission to the jamovi module store)*
+
+Once available, this will be the recommended installation method, as the jamovi library provides pre-built versions for all supported platforms (Windows, macOS Intel, macOS Apple Silicon, and Linux).
+
+### From GitHub (for testing)
+
+**Option 1: Pre-built module**
 
 1. Download the `.jmo` file from the [Releases](../../releases) page
 2. In jamovi, go to **Modules** → **jamovi library** → **Sideload** (⋮ menu)
 3. Select the downloaded `.jmo` file
 
-> ⚠️ **Note:** The pre-built `.jmo` file was compiled on macOS and will only work on macOS systems. Windows and Linux users will need to build the module from source using `jmvtools::install()` in R, or wait for the module to become available in the jamovi library.
+> ⚠️ **Important:** The pre-built `.jmo` file was compiled on macOS (Apple Silicon) with jamovi 2.6.x. It will work on Macs running jamovi 2.6.x (Apple Silicon version). It may **not** work on:
+> - Windows or Linux systems
+> - Macs running the Intel version of jamovi
+> - Systems running jamovi 2.7.x or later
+>
+> Users in these situations should use Option 2 below.
 
-### From jamovi Module Library
+**Option 2: Build from source (all platforms)**
 
-*(Coming soon — pending submission to the jamovi module store)*
+If the pre-built `.jmo` file is not compatible with your system, you can build the module from source:
+
+1. Ensure you have R and the `jmvtools` package installed:
+   ```r
+   install.packages('jmvtools', repos = c('https://repo.jamovi.org', 'https://cran.r-project.org'))
+   ```
+2. Clone or download this repository
+3. Open R in the repository directory and run:
+   ```r
+   jmvtools::install()
+   ```
+
+This will compile the module for your specific platform and install it into your local jamovi installation.
 
 ## Requirements
 
 - jamovi 2.6 or later
-- R 4.4.1 or later (bundled with jamovi)
+- R 4.4.1 or later (bundled with jamovi; required only if building from source)
 
 ## Author
 
@@ -100,16 +123,8 @@ If you use this module in your research or teaching, please cite:
 
 - **chisquare**: The author's CRAN package providing many of the underlying statistical functions
 - **stratastats**: The author's CRAN package providing many of the underlying statistical functions
-- **From Data to Insights: A Beginner's Guide toe Cross-Tabulation Analysis** (Chapman & Hall, 2024. ISBN 9781032720388)
+- **From Data to Insights: A Beginner's Guide to Cross-Tabulation Analysis** (Chapman & Hall, 2024. ISBN 9781032720388)
 
 ## Licence
 
 This project is licensed under the GNU General Public License v3.0 — see the [LICENSE](LICENSE) file for details.
-
-## Feedback and Bug Reports
-
-Please report issues or suggestions via the [GitHub Issues](../../issues) page or the [jamovi forum](https://forum.jamovi.org/).
-
-## Acknowledgements
-
-This module was developed with support from the jamovi developer community. Thanks to all beta testers who provided feedback during development.
