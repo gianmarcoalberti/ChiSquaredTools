@@ -1113,11 +1113,35 @@ chisqassocClass <- R6::R6Class(
             
             # ODDS RATIO (2x2 only) - WITH CI AND P-VALUE
             if (self$options$oddsRatio && is_2x2) {
+                # Get reference categories from options (or use defaults)
+                row_levels <- rownames(contingency_table)
+                col_levels <- colnames(contingency_table)
+                
+                rowRef <- self$options$rowRef
+                colRef <- self$options$colRef
+                
+                # Default to first level if not specified
+                if (is.null(rowRef) || rowRef == "") {
+                    rowRef <- row_levels[1]
+                }
+                if (is.null(colRef) || colRef == "") {
+                    colRef <- col_levels[1]
+                }
+                
+                # Determine the "other" categories
+                rowOther <- row_levels[row_levels != rowRef][1]
+                colOther <- col_levels[col_levels != colRef][1]
+                
+                # Reorder table so reference categories are in position [1,1]
+                row_order <- c(which(row_levels == rowRef), which(row_levels != rowRef))
+                col_order <- c(which(col_levels == colRef), which(col_levels != colRef))
+                ct_reordered <- contingency_table[row_order, col_order, drop = FALSE]
+                
                 # Apply Haldane-Anscombe correction if any cell is zero
-                if (any(contingency_table == 0)) {
-                    ct_corrected <- contingency_table + 0.5
+                if (any(ct_reordered == 0)) {
+                    ct_corrected <- ct_reordered + 0.5
                 } else {
-                    ct_corrected <- contingency_table
+                    ct_corrected <- ct_reordered
                 }
                 
                 a <- ct_corrected[1, 1]
@@ -1150,6 +1174,16 @@ chisqassocClass <- R6::R6Class(
                     effectSize = effect
                 ))
                 row_count <- row_count + 1
+                
+                # Generate and display OR interpretation
+                or_interpretation <- private$.generateORInterpretation(
+                    or_val, rowRef, colRef, rowOther, colOther
+                )
+                self$results$orInterpretation$setContent(or_interpretation)
+                self$results$orInterpretation$setVisible(TRUE)
+            } else {
+                # Hide interpretation for non-2x2 tables or when OR not selected
+                self$results$orInterpretation$setVisible(FALSE)
             }
             
             # GOODMAN-KRUSKAL LAMBDA - WITH CI
@@ -1942,7 +1976,7 @@ chisqassocClass <- R6::R6Class(
                                "<p>However, in tables with asymmetric marginal distributions, D<sub>G</sub> cannot achieve its theoretical maximum of unity due to structural constraints imposed by the marginals. ",
                                "In such cases, a maximum-corrected version (Sakoda's D Global corrected) adjusts the observed D<sub>G</sub> by dividing it by its maximum achievable value, ",
                                "computed from the chi-squared-maximising table. This correction ensures the measure ranges from 0 to 1 under any marginal configuration.</p>",
-                               "<p>Unlike chi-squared-based measures—which use squared deviations divided by expected values—D<sub>G</sub> uses absolute deviations. As Sakoda (1981) noted, squaring residuals gives greater weight to extreme cells; additionally, because D<sub>G</sub> does not divide by expected values, it avoids the inflation that can affect Cramér's V when some expected cell counts are very small (Kvålseth 2018). D<sub>G</sub> also has an intuitive interpretation: it indicates the fraction of cases that must move from cells with excess observations to cells with deficit observations to eliminate association. Bootstrap confidence intervals are computed to quantify uncertainty.</p>")
+                               "<p>Unlike chi-squared-based measures—which use squared deviations divided by expected values—D<sub>G</sub> uses absolute deviations. As Sakoda (1981) noted, squaring residuals gives greater weight to extreme cells; additionally, because D<sub>G</sub> does not divide by expected values, it avoids the inflation that can affect Cramér's V when some expected cell counts are very small (Kvålseth 2018a). D<sub>G</sub> also has an intuitive interpretation: it indicates the fraction of cases that must move from cells with excess observations to cells with deficit observations to eliminate association. Bootstrap confidence intervals are computed to quantify uncertainty.</p>")
                 html <- paste0(html, "<p style='font-size: 0.85em; color: #666; margin-top: 8px; margin-bottom: 12px;'><em>See: Sakoda 1981.</em></p>")
             }
             
@@ -2971,6 +3005,56 @@ chisqassocClass <- R6::R6Class(
             }
             
             return("")
+        },
+            
+        .generateORInterpretation = function(or_val, rowRef, colRef, rowOther, colOther) {
+            # Generate plain-language interpretation of the odds ratio
+            # Follows the exact pattern used in the stratified analysis facility
+            
+            if (is.na(or_val) || is.infinite(or_val)) {
+                return("")
+            }
+            
+            # Format OR value
+            orFormatted <- sprintf("%.2f", or_val)
+            
+            # Build interpretation text following stratified analysis logic
+            # rowRef = outcome of interest, colRef = exposure, colOther = reference
+            if (or_val >= 1) {
+                if (or_val == 1) {
+                    annotation <- paste0(
+                        "<em>", colRef, "</em> and <em>", colOther, 
+                        "</em> have similar odds of being <em>", rowRef, "</em>."
+                    )
+                } else {
+                    annotation <- paste0(
+                        "<em>", colRef, "</em> have ", orFormatted, 
+                        " times the odds of being <em>", rowRef,
+                        "</em> compared to <em>", colOther, "</em>."
+                    )
+                }
+            } else {
+                # OR < 1: express using actual OR value with percentage interpretation
+                pctLower <- sprintf("%.0f", (1 - or_val) * 100)
+                annotation <- paste0(
+                    "<em>", colRef, "</em> have ", orFormatted, 
+                    " times the odds of being <em>", rowRef,
+                    "</em> compared to <em>", colOther, 
+                    "</em> (i.e., ", pctLower, "% lower odds)."
+                )
+            }
+            
+            # Wrap in styled div matching asymmetry note styling
+            html <- paste0(
+                "<div style='font-size: 0.9em; color: #555; margin: 10px 0; ",
+                "padding: 8px; background-color: #f0f8ff; ",
+                "border-left: 3px solid #2874A6;'>",
+                "<strong>Interpretation (OR = ", orFormatted, "):</strong> ", annotation,
+                " For statistical significance, refer to the <em>Association Measures Summary</em> table.",
+                "</div>"
+            )
+            
+            return(html)
         }
     )
 )
