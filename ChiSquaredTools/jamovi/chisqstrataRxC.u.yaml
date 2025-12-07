@@ -78,4 +78,6 @@ children:
           - type: CheckBox
             name: showInterpretation
           - type: CheckBox
+            name: showDiagnosticSummary
+          - type: CheckBox
             name: showMethodInfo

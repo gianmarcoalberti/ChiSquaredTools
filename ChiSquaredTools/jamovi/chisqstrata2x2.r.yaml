@@ -50,6 +50,30 @@ items:
       type: Html
       visible: true
 
+    - name: partialChiSqTable
+      title: Chi-Squared Tests
+      type: Table
+      visible: (showPartialChiSq)
+      clearWith:
+        - rows
+        - cols
+        - strata
+        - counts
+      columns:
+        - name: stratum
+          title: 'Table'
+          type: text
+        - name: chisq
+          title: 'χ²'
+          type: number
+        - name: df
+          title: 'df'
+          type: integer
+        - name: pvalue
+          title: 'p'
+          type: number
+          format: zto,pvalue
+
     - name: oddsRatioTable
       title: Odds Ratios and Confidence Intervals
       type: Table
@@ -75,30 +99,6 @@ items:
           title: 'Upper'
           superTitle: '95% CI'
           type: number
-
-    - name: partialChiSqTable
-      title: Chi-Squared Tests
-      type: Table
-      visible: (showPartialChiSq)
-      clearWith:
-        - rows
-        - cols
-        - strata
-        - counts
-      columns:
-        - name: stratum
-          title: 'Table'
-          type: text
-        - name: chisq
-          title: 'χ²'
-          type: number
-        - name: df
-          title: 'df'
-          type: integer
-        - name: pvalue
-          title: 'p'
-          type: number
-          format: zto,pvalue
 
     - name: cmhTestTable
       title: Cochran-Mantel-Haenszel Test for Conditional Independence
@@ -174,6 +174,16 @@ items:
         - rowRef
         - colRef
 
+    - name: diagnosticSummary
+      title: Diagnostic Summary
+      type: Html
+      visible: (showDiagnosticSummary)
+      clearWith:
+        - rows
+        - cols
+        - strata
+        - counts
+
     - name: forestPlot
       title: Forest Plot of Odds Ratios
       type: Image
@@ -206,20 +216,6 @@ items:
         - rowRef
         - colRef
         - strataOrdered
-
-    - name: diagnosticTree
-      title: Diagnostic Decision Path
-      type: Image
-      visible: (showDiagnosticTree)
-      width: 800
-      height: 500
-      renderFun: .diagnosticTree
-      requiresData: true
-      clearWith:
-        - rows
-        - cols
-        - strata
-        - counts
 
     - name: methodInfo
       title: Method Details

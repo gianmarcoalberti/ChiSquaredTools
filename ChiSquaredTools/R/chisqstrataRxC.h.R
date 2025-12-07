@@ -17,6 +17,7 @@ chisqstrataRxCOptions <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Cl
             strataOrdered = FALSE,
             showTrajectoryPlot = TRUE,
             showInterpretation = TRUE,
+            showDiagnosticSummary = TRUE,
             showMethodInfo = FALSE, ...) {
 
             super$initialize(
@@ -84,6 +85,10 @@ chisqstrataRxCOptions <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Cl
                 "showInterpretation",
                 showInterpretation,
                 default=TRUE)
+            private$..showDiagnosticSummary <- jmvcore::OptionBool$new(
+                "showDiagnosticSummary",
+                showDiagnosticSummary,
+                default=TRUE)
             private$..showMethodInfo <- jmvcore::OptionBool$new(
                 "showMethodInfo",
                 showMethodInfo,
@@ -100,6 +105,7 @@ chisqstrataRxCOptions <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Cl
             self$.addOption(private$..strataOrdered)
             self$.addOption(private$..showTrajectoryPlot)
             self$.addOption(private$..showInterpretation)
+            self$.addOption(private$..showDiagnosticSummary)
             self$.addOption(private$..showMethodInfo)
         }),
     active = list(
@@ -114,6 +120,7 @@ chisqstrataRxCOptions <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Cl
         strataOrdered = function() private$..strataOrdered$value,
         showTrajectoryPlot = function() private$..showTrajectoryPlot$value,
         showInterpretation = function() private$..showInterpretation$value,
+        showDiagnosticSummary = function() private$..showDiagnosticSummary$value,
         showMethodInfo = function() private$..showMethodInfo$value),
     private = list(
         ..rows = NA,
@@ -127,6 +134,7 @@ chisqstrataRxCOptions <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Cl
         ..strataOrdered = NA,
         ..showTrajectoryPlot = NA,
         ..showInterpretation = NA,
+        ..showDiagnosticSummary = NA,
         ..showMethodInfo = NA)
 )
 
@@ -147,6 +155,7 @@ chisqstrataRxCResults <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Cl
         residualsNote = function() private$.items[["residualsNote"]],
         interpretationGuideHeader = function() private$.items[["interpretationGuideHeader"]],
         interpretationNote = function() private$.items[["interpretationNote"]],
+        diagnosticSummary = function() private$.items[["diagnosticSummary"]],
         forestPlot = function() private$.items[["forestPlot"]],
         trajectoryPlot = function() private$.items[["trajectoryPlot"]],
         diagnosticTree = function() private$.items[["diagnosticTree"]],
@@ -363,6 +372,16 @@ chisqstrataRxCResults <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Cl
                     "cols",
                     "strata",
                     "counts")))
+            self$add(jmvcore::Html$new(
+                options=options,
+                name="diagnosticSummary",
+                title="Diagnostic Summary",
+                visible="(showDiagnosticSummary)",
+                clearWith=list(
+                    "rows",
+                    "cols",
+                    "strata",
+                    "counts")))
             self$add(jmvcore::Image$new(
                 options=options,
                 name="forestPlot",
@@ -517,6 +536,9 @@ chisqstrataRxCBase <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class
 #'   ordered.
 #' @param showInterpretation TRUE or FALSE (default: TRUE), display the
 #'   detailed interpretation guide based on the pattern of test results.
+#' @param showDiagnosticSummary TRUE or FALSE (default: TRUE), display a
+#'   narrative diagnostic summary that explains the identified scenario and its
+#'   implications.
 #' @param showMethodInfo TRUE or FALSE (default: FALSE), display detailed
 #'   methodological  explanations for all tests performed.
 #' @return A results object containing:
@@ -534,6 +556,7 @@ chisqstrataRxCBase <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class
 #'   \code{results$residualsNote} \tab \tab \tab \tab \tab a html \cr
 #'   \code{results$interpretationGuideHeader} \tab \tab \tab \tab \tab a html \cr
 #'   \code{results$interpretationNote} \tab \tab \tab \tab \tab a html \cr
+#'   \code{results$diagnosticSummary} \tab \tab \tab \tab \tab a html \cr
 #'   \code{results$forestPlot} \tab \tab \tab \tab \tab an image \cr
 #'   \code{results$trajectoryPlot} \tab \tab \tab \tab \tab an image \cr
 #'   \code{results$diagnosticTree} \tab \tab \tab \tab \tab an image \cr
@@ -561,6 +584,7 @@ chisqstrataRxC <- function(
     strataOrdered = FALSE,
     showTrajectoryPlot = TRUE,
     showInterpretation = TRUE,
+    showDiagnosticSummary = TRUE,
     showMethodInfo = FALSE) {
 
     if ( ! requireNamespace("jmvcore", quietly=TRUE))
@@ -594,6 +618,7 @@ chisqstrataRxC <- function(
         strataOrdered = strataOrdered,
         showTrajectoryPlot = showTrajectoryPlot,
         showInterpretation = showInterpretation,
+        showDiagnosticSummary = showDiagnosticSummary,
         showMethodInfo = showMethodInfo)
 
     analysis <- chisqstrataRxCClass$new(

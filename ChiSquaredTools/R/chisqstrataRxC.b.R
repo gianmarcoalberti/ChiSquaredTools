@@ -272,6 +272,12 @@ chisqstrataRxCClass <- R6::R6Class(
         )
       }
       
+      # Populate diagnostic summary
+      if (self$options$showDiagnosticSummary) {
+        private$.populateDiagnosticSummary(cmhTest, loglinResult, 
+                                           rowVar, colVar, strataVar)
+      }
+      
       # ═══════════════════════════════════════════════════════════════════════════
       # 11. Populate method information and references
       # ═══════════════════════════════════════════════════════════════════════════
@@ -1120,6 +1126,122 @@ chisqstrataRxCClass <- R6::R6Class(
       html <- paste0(html, "</div>")
       
       self$results$interpretationNote$setContent(html)
+    },
+    
+    # ═══════════════════════════════════════════════════════════════════════════
+    # Populate: Diagnostic Summary
+    # ═══════════════════════════════════════════════════════════════════════════
+    
+    .populateDiagnosticSummary = function(cmhTest, loglinResult, rowVar, colVar, strataVar) {
+      
+      # Guard against invalid test results
+      if (is.null(cmhTest$p.value) || is.na(cmhTest$p.value) ||
+          is.null(loglinResult$pvalue) || is.na(loglinResult$pvalue)) {
+        return()
+      }
+      
+      # Determine significance
+      cmhSig <- cmhTest$p.value < 0.05
+      loglinSig <- loglinResult$pvalue < 0.05
+      
+      # Determine scenario (must match decision tree exactly)
+      if (cmhSig && !loglinSig) {
+        # Scenario 1: CMH significant, homogeneity holds
+        scenario <- "Homogeneous Association (Replication)"
+        explanation <- paste0(
+          "<p><strong>Homogeneous association</strong> (replication) indicates <em>conditional dependence</em>: ",
+          "a significant conditional association exists between the row and column variables after controlling for the stratifying variable, ",
+          "and this association is consistent in strength across all strata.</p>",
+          "<p>In this analysis:</p>",
+          "<ul>",
+          "<li>The <strong>generalised CMH test</strong> is significant (\u03C7\u00B2 = ",
+          sprintf("%.2f", as.numeric(cmhTest$statistic)), ", p = ", sprintf("%.3f", cmhTest$p.value),
+          "), indicating that '", rowVar, "' and '", colVar, 
+          "' are <em>not</em> conditionally independent given '", strataVar, "'.</li>",
+          "<li>The <strong>log-linear homogeneity test</strong> is not significant (G\u00B2 = ",
+          sprintf("%.2f", loglinResult$statistic), ", p = ", sprintf("%.3f", loglinResult$pvalue),
+          "), indicating that the strength of association is consistent across strata.</li>",
+          "</ul>",
+          "<p><strong>Conclusion:</strong> A conditional association exists between '", rowVar,
+          "' and '", colVar, "' given '", strataVar, "', and '", strataVar, 
+          "' is neither a confounder nor an effect modifier. The weighted average V<sub>corrected</sub> provides a valid summary of this conditional association.</p>"
+        )
+        
+      } else if (cmhSig && loglinSig) {
+        # Scenario 2: CMH significant, heterogeneity present
+        scenario <- "Heterogeneous Association (Effect Modification)"
+        explanation <- paste0(
+          "<p><strong>Heterogeneous association</strong> (effect modification) indicates <em>conditional dependence with interaction</em>: ",
+          "a significant conditional association exists between the row and column variables after controlling for the stratifying variable, ",
+          "but the strength of this association varies across strata.</p>",
+          "<p>In this analysis:</p>",
+          "<ul>",
+          "<li>The <strong>generalised CMH test</strong> is significant (\u03C7\u00B2 = ",
+          sprintf("%.2f", as.numeric(cmhTest$statistic)), ", p = ", sprintf("%.3f", cmhTest$p.value),
+          "), indicating that '", rowVar, "' and '", colVar, 
+          "' are <em>not</em> conditionally independent given '", strataVar, "'.</li>",
+          "<li>The <strong>log-linear homogeneity test</strong> is significant (G\u00B2 = ",
+          sprintf("%.2f", loglinResult$statistic), ", p = ", sprintf("%.3f", loglinResult$pvalue),
+          "), indicating that the strength of association varies across strata.</li>",
+          "</ul>",
+          "<p><strong>Conclusion:</strong> A conditional association exists between '", rowVar,
+          "' and '", colVar, "' given '", strataVar, "', but '", strataVar, 
+          "' acts as an <em>effect modifier</em>. A single weighted average is not meaningful; stratum-specific V<sub>corrected</sub> values should be reported.</p>"
+        )
+        
+      } else if (!cmhSig && !loglinSig) {
+        # Scenario 3: CMH not significant, homogeneity holds
+        scenario <- "Conditional Independence"
+        explanation <- paste0(
+          "<p><strong>Conditional independence</strong> indicates <em>no conditional association</em> between the row and column variables ",
+          "after controlling for the stratifying variable, with consistently near-zero effects across all strata.</p>",
+          "<p>In this analysis:</p>",
+          "<ul>",
+          "<li>The <strong>generalised CMH test</strong> is not significant (\u03C7\u00B2 = ",
+          sprintf("%.2f", as.numeric(cmhTest$statistic)), ", p = ", sprintf("%.3f", cmhTest$p.value),
+          "), indicating that '", rowVar, "' and '", colVar, 
+          "' are conditionally independent given '", strataVar, "'.</li>",
+          "<li>The <strong>log-linear homogeneity test</strong> is not significant (G\u00B2 = ",
+          sprintf("%.2f", loglinResult$statistic), ", p = ", sprintf("%.3f", loglinResult$pvalue),
+          "), indicating that this absence of association is consistent across strata.</li>",
+          "</ul>",
+          "<p><strong>Conclusion:</strong> No conditional association exists between '", rowVar,
+          "' and '", colVar, "' given '", strataVar, 
+          "'. If a marginal association was observed, '", strataVar, "' may have acted as a confounder.</p>"
+        )
+        
+      } else {
+        # Scenario 4: CMH not significant, heterogeneity present
+        scenario <- "Opposing Associations (Cancellation)"
+        explanation <- paste0(
+          "<p><strong>Opposing associations</strong> indicate a complex pattern: the overall CMH test suggests <em>conditional independence</em>, ",
+          "yet the significant heterogeneity test reveals that stratum-specific conditional associations exist but differ in ways that cancel out when aggregated.</p>",
+          "<p>In this analysis:</p>",
+          "<ul>",
+          "<li>The <strong>generalised CMH test</strong> is not significant (\u03C7\u00B2 = ",
+          sprintf("%.2f", as.numeric(cmhTest$statistic)), ", p = ", sprintf("%.3f", cmhTest$p.value),
+          "), suggesting no overall conditional association between '", rowVar, "' and '", colVar, "'.</li>",
+          "<li>The <strong>log-linear homogeneity test</strong> is significant (G\u00B2 = ",
+          sprintf("%.2f", loglinResult$statistic), ", p = ", sprintf("%.3f", loglinResult$pvalue),
+          "), indicating that the association patterns differ meaningfully across strata.</li>",
+          "</ul>",
+          "<p><strong>Conclusion:</strong> Although the CMH test does not detect an overall conditional association, ",
+          "the heterogeneity indicates that conditional associations likely exist within individual strata but cancel out in aggregate. ",
+          "Alternatively, this may reflect insufficient statistical power. ",
+          "Stratum-specific chi-squared tests and V<sub>corrected</sub> values should be examined.</p>"
+        )
+      }
+      
+      # Build final HTML
+      html <- paste0(
+        "<div style='background-color: #f0f7fb; border-left: 4px solid #2874A6; ",
+        "padding: 15px; margin: 10px 0; font-family: sans-serif;'>",
+        "<h4 style='color: #2874A6; margin-top: 0;'>Diagnostic Summary: ", scenario, "</h4>",
+        explanation,
+        "</div>"
+      )
+      
+      self$results$diagnosticSummary$setContent(html)
     },
     
     # ═══════════════════════════════════════════════════════════════════════════

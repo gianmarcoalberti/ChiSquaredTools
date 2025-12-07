@@ -167,6 +167,18 @@ chisqstrata2x2Class <- R6::R6Class(
         # Chi-squared test for marginal table
         marginalChiSq <- stats::chisq.test(marginalTable, correct = FALSE)
         
+        # Pooled chi-squared test (sum of stratum-specific chi-squared values)
+        # This test is robust when stratum-specific associations operate in opposite directions
+        pooledChiSq <- list(
+          statistic = sum(sapply(chiSqResults, function(x) x$statistic)),
+          df = sum(sapply(chiSqResults, function(x) x$df)),
+          pvalue = stats::pchisq(
+            sum(sapply(chiSqResults, function(x) x$statistic)),
+            df = sum(sapply(chiSqResults, function(x) x$df)),
+            lower.tail = FALSE
+          )
+        )
+        
         # Cochran-Mantel-Haenszel test
         cmhTest <- stats::mantelhaen.test(array3D, correct = FALSE)
         
@@ -219,13 +231,12 @@ chisqstrata2x2Class <- R6::R6Class(
         image$setSize(700, 200 + (K * 60) + 80)
       }
       
-      # Diagnostic tree state
-      if (self$options$showDiagnosticTree) {
-        treeData <- private$.prepareDiagnosticTreeData(cmhTest$p.value, 
-                                                       mhResult$pvalue,
-                                                       bdtResult$pvalue)
-        image <- self$results$diagnosticTree
-        image$setState(treeData)
+      # Diagnostic summary
+      if (self$options$showDiagnosticSummary) {
+        private$.populateDiagnosticSummary(
+          marginalChiSq, pooledChiSq, cmhTest, mhResult, bdtResult,
+          orsAndCIs, rowVar, colVar, strataVar
+        )
       }
       
       # Trajectory plot state (only if strata marked as ordered)
@@ -236,7 +247,7 @@ chisqstrata2x2Class <- R6::R6Class(
       }
       
       if (self$options$showPartialChiSq) {
-        private$.populatePartialChiSqTable(chiSqResults, marginalChiSq, strataNames)
+        private$.populatePartialChiSqTable(chiSqResults, marginalChiSq, pooledChiSq, strataNames)
       }
       
       private$.populateCMHTable(cmhTest, commonOR, commonCI)
@@ -248,7 +259,7 @@ chisqstrata2x2Class <- R6::R6Class(
       
       if (self$options$showInterpretation) {
         private$.populateInterpretation(
-          chiSqResults, marginalChiSq, cmhTest, mhResult, bdtResult,
+          chiSqResults, marginalChiSq, pooledChiSq, cmhTest, mhResult, bdtResult,
           orsAndCIs, commonOR, commonCI, strataNames,
           rowVar, colVar, strataVar
         )
@@ -740,7 +751,7 @@ chisqstrata2x2Class <- R6::R6Class(
     # Populate: Partial chi-squared table
     # ═══════════════════════════════════════════════════════════════════════════
     
-    .populatePartialChiSqTable = function(chiSqResults, marginalChiSq, strataNames) {
+    .populatePartialChiSqTable = function(chiSqResults, marginalChiSq, pooledChiSq, strataNames) {
       
       table <- self$results$partialChiSqTable
       K <- length(chiSqResults)
@@ -761,6 +772,14 @@ chisqstrata2x2Class <- R6::R6Class(
         chisq = as.numeric(marginalChiSq$statistic),
         df = as.integer(marginalChiSq$parameter),
         pvalue = marginalChiSq$p.value
+      ))
+      
+      # Add pooled chi-squared row
+      table$addRow(rowKey = 'pooled', values = list(
+        stratum = "Pooled (sum of partial)",
+        chisq = pooledChiSq$statistic,
+        df = pooledChiSq$df,
+        pvalue = pooledChiSq$pvalue
       ))
     },
     
@@ -812,10 +831,10 @@ chisqstrata2x2Class <- R6::R6Class(
     # Populate: Interpretation
     # ═══════════════════════════════════════════════════════════════════════════
     
-    .populateInterpretation = function(chiSqResults, marginalChiSq, cmhTest, 
-                                        mhResult, bdtResult, orsAndCIs, 
-                                        commonOR, commonCI, strataNames,
-                                        rowVar, colVar, strataVar) {
+    .populateInterpretation = function(chiSqResults, marginalChiSq, pooledChiSq, cmhTest, 
+                                       mhResult, bdtResult, orsAndCIs, 
+                                       commonOR, commonCI, strataNames,
+                                       rowVar, colVar, strataVar) {
       
       # Guard against invalid test results
       if (is.null(cmhTest$p.value) || is.na(cmhTest$p.value) ||
@@ -831,6 +850,18 @@ chisqstrata2x2Class <- R6::R6Class(
       }
       
       K <- length(chiSqResults)
+      
+      # Determine significance flags
+      marginalSig <- marginalChiSq$p.value < 0.05
+      pooledSig <- pooledChiSq$pvalue < 0.05
+      cmhSig <- cmhTest$p.value < 0.05
+      mhSig <- mhResult$pvalue < 0.05
+      bdtSig <- bdtResult$pvalue < 0.05
+      heterogeneitySig <- mhSig || bdtSig
+      
+      # Assess direction change from odds ratios
+      orValues <- sapply(orsAndCIs, function(x) x$or)
+      directionChange <- any(orValues < 1) && any(orValues > 1)
       
       html <- "<div style='font-family: sans-serif; line-height: 1.6; font-size: 0.95em;'>"
       
@@ -857,13 +888,19 @@ chisqstrata2x2Class <- R6::R6Class(
                      ", p = ", sprintf("%.3f", marginalChiSq$p.value),
                      " (", margSigText, ")</li>")
       
+      pooledSigText <- if (pooledSig) "significant" else "not significant"
+      html <- paste0(html, "<li>Pooled (sum of partial): ",
+                     "\u03C7\u00B2 = ", sprintf("%.2f", pooledChiSq$statistic),
+                     ", df = ", pooledChiSq$df,
+                     ", p = ", sprintf("%.3f", pooledChiSq$pvalue),
+                     " (", pooledSigText, ")</li>")
+      
       html <- paste0(html, "</ul>")
       
       # ─────────────────────────────────────────────────────────────────────────
       # (B) CMH test
       # ─────────────────────────────────────────────────────────────────────────
       
-      cmhSig <- cmhTest$p.value < 0.05
       cmhSigText <- if (cmhSig) "" else "not "
       cmhInterpretation <- if (cmhSig) {
         "conditional dependence (the odds ratio in at least one of the partial tables is not equal to 1)"
@@ -872,112 +909,111 @@ chisqstrata2x2Class <- R6::R6Class(
       }
       
       html <- paste0(html, 
-        "<p><strong>(B)</strong> The Cochran-Mantel-Haenszel test is <strong>",
-        cmhSigText, "significant</strong> (\u03C7\u00B2 = ", 
-        sprintf("%.2f", as.numeric(cmhTest$statistic)),
-        ", df = ", as.integer(cmhTest$parameter),
-        ", p = ", sprintf("%.3f", cmhTest$p.value),
-        "), suggesting ", cmhInterpretation, ".</p>"
+                     "<p><strong>(B)</strong> The Cochran-Mantel-Haenszel test is <strong>",
+                     cmhSigText, "significant</strong> (\u03C7\u00B2 = ", 
+                     sprintf("%.2f", as.numeric(cmhTest$statistic)),
+                     ", df = ", as.integer(cmhTest$parameter),
+                     ", p = ", sprintf("%.3f", cmhTest$p.value),
+                     "), suggesting ", cmhInterpretation, ".</p>"
       )
+      
+      # ─────────────────────────────────────────────────────────────────────────
+      # (B2) Pooled chi-squared interpretation (when relevant)
+      # ─────────────────────────────────────────────────────────────────────────
+      
+      if (!cmhSig && pooledSig && directionChange) {
+        html <- paste0(html,
+                       "<p><strong>(B2)</strong> However, the <strong>pooled chi-squared test</strong> is significant ",
+                       "(\u03C7\u00B2 = ", sprintf("%.2f", pooledChiSq$statistic),
+                       ", df = ", pooledChiSq$df,
+                       ", p = ", sprintf("%.3f", pooledChiSq$pvalue),
+                       "), indicating conditional dependence. <em>When the pooled test is significant but the CMH test is not, ",
+                       "this typically indicates that stratum-specific associations operate in opposite directions, ",
+                       "causing the CMH test to be unreliable.</em></p>"
+        )
+      }
       
       # ─────────────────────────────────────────────────────────────────────────
       # (C) MH homogeneity test
       # ─────────────────────────────────────────────────────────────────────────
       
-      mhSig <- mhResult$pvalue < 0.05
       mhSigText <- if (mhSig) "" else "not "
       mhInterpretation <- if (mhSig) "heterogeneity" else "homogeneity"
       
       html <- paste0(html,
-        "<p><strong>(C)</strong> The Mantel-Haenszel test for homogeneity of odds ratios is <strong>",
-        mhSigText, "significant</strong> (\u03C7\u00B2 = ",
-        sprintf("%.2f", mhResult$statistic),
-        ", df = ", mhResult$df,
-        ", p = ", sprintf("%.3f", mhResult$pvalue),
-        "), indicating ", mhInterpretation, " of the odds ratios across strata.</p>"
+                     "<p><strong>(C)</strong> The Mantel-Haenszel test for homogeneity of odds ratios is <strong>",
+                     mhSigText, "significant</strong> (\u03C7\u00B2 = ",
+                     sprintf("%.2f", mhResult$statistic),
+                     ", df = ", mhResult$df,
+                     ", p = ", sprintf("%.3f", mhResult$pvalue),
+                     "), indicating ", mhInterpretation, " of the odds ratios across strata.</p>"
       )
       
       # ─────────────────────────────────────────────────────────────────────────
       # (D) BDT homogeneity test
       # ─────────────────────────────────────────────────────────────────────────
       
-      bdtSig <- bdtResult$pvalue < 0.05
       bdtSigText <- if (bdtSig) "" else "not "
       bdtInterpretation <- if (bdtSig) "heterogeneity" else "homogeneity"
       
       html <- paste0(html,
-        "<p><strong>(D)</strong> The Breslow-Day-Tarone test for homogeneity of odds ratios is <strong>",
-        bdtSigText, "significant</strong> (\u03C7\u00B2 = ",
-        sprintf("%.2f", bdtResult$statistic),
-        ", df = ", bdtResult$df,
-        ", p = ", sprintf("%.3f", bdtResult$pvalue),
-        "), indicating ", bdtInterpretation, " of the odds ratios across strata.</p>"
+                     "<p><strong>(D)</strong> The Breslow-Day-Tarone test for homogeneity of odds ratios is <strong>",
+                     bdtSigText, "significant</strong> (\u03C7\u00B2 = ",
+                     sprintf("%.2f", bdtResult$statistic),
+                     ", df = ", bdtResult$df,
+                     ", p = ", sprintf("%.3f", bdtResult$pvalue),
+                     "), indicating ", bdtInterpretation, " of the odds ratios across strata.</p>"
       )
       
       # ─────────────────────────────────────────────────────────────────────────
       # (E) Overall interpretation
       # ─────────────────────────────────────────────────────────────────────────
       
-      # Detect direction change in ORs
-      orValues <- sapply(orsAndCIs, function(x) x$or)
-      directionChange <- any(orValues < 1) && any(orValues > 1)
-      
       html <- paste0(html, "<p><strong>(E) Overall interpretation:</strong> ")
       
-      if (bdtSig) {
-        # Heterogeneity exists
-        if (directionChange) {
-          # Interaction effect with direction change
-          html <- paste0(html,
-                         "Significant heterogeneity of odds ratios across strata, with a change in the ",
-                         "<strong>direction</strong> of the association between '", rowVar, "' and '", colVar,
-                         "', indicates an <strong>interaction effect</strong>: '", strataVar,
-                         "' modifies the direction of the relationship between '", rowVar, "' and '", colVar, "'. ",
-                         "Since the stratum-specific odds ratios are in opposite directions, ",
-                         "the CMH test result may be unreliable and the common odds ratio is not a meaningful summary. ",
-                         "Stratum-specific chi-squared tests should be evaluated to assess within-stratum associations."
-          )
-        } else {
-          # Specification effect (heterogeneity in strength only)
-          cmhClause <- if (cmhSig) {
-            paste0("The CMH test indicates a significant conditional association between '",
-                   rowVar, "' and '", colVar, "' after controlling for '", strataVar, "'. ")
-          } else {
-            paste0("The CMH test does not indicate a significant conditional association between '",
-                   rowVar, "' and '", colVar, "' after controlling for '", strataVar, "'. ")
-          }
-          html <- paste0(html, cmhClause,
-                         "Significant heterogeneity of odds ratios across strata has been detected, ",
-                         "indicating an <strong>interaction effect</strong>: '", strataVar,
-                         "' modifies the <strong>strength</strong> of the association between '", rowVar, "' and '", colVar,
-                         "', although the direction remains consistent. ",
-                         "Because the association varies in magnitude across strata, ",
-                         "stratum-specific odds ratios should be reported rather than a single common odds ratio."
-          )
-        }
+      if (marginalSig && !cmhSig && !heterogeneitySig) {
+        html <- paste0(html,
+                       "The pattern indicates <strong>spuriousness</strong>: the marginal association disappears ",
+                       "when stratified, suggesting that '", strataVar, "' acts as a confounder."
+        )
+      } else if (marginalSig && !cmhSig && heterogeneitySig && pooledSig && directionChange) {
+        # Interaction with CMH failure due to directional reversal
+        html <- paste0(html,
+                       "The pattern indicates <strong>interaction</strong> (effect modification with directional reversal): ",
+                       "stratum-specific associations operate in opposite directions. The CMH test is unreliable in this situation; ",
+                       "the significant pooled chi-squared test indicates conditional dependence. '", strataVar, "' acts as an effect modifier."
+        )
+      } else if (marginalSig && !cmhSig && heterogeneitySig) {
+        # Simpson's Paradox (pooled non-sig or no direction change)
+        html <- paste0(html,
+                       "The pattern indicates <strong>interpretation</strong> (Simpson's Paradox): stratum-specific ",
+                       "associations cancel out. '", strataVar, "' acts as an effect modifier."
+        )
+      } else if (marginalSig && cmhSig && !heterogeneitySig) {
+        html <- paste0(html,
+                       "The pattern indicates <strong>replication</strong>: the association between '", rowVar, 
+                       "' and '", colVar, "' is consistent across strata. '", strataVar, "' is neither a confounder nor an effect modifier."
+        )
+      } else if (marginalSig && cmhSig && heterogeneitySig) {
+        html <- paste0(html,
+                       "The pattern indicates <strong>interaction</strong>: the association between '", rowVar, 
+                       "' and '", colVar, "' varies across strata. '", strataVar, "' acts as an effect modifier."
+        )
+      } else if (!marginalSig && cmhSig) {
+        html <- paste0(html,
+                       "The pattern indicates <strong>suppression</strong>: no marginal association, but a conditional ",
+                       "association emerges when stratified. '", strataVar, "' was masking the relationship."
+        )
+      } else if (!marginalSig && !cmhSig && !heterogeneitySig) {
+        html <- paste0(html,
+                       "The pattern indicates <strong>no association</strong> between '", rowVar, 
+                       "' and '", colVar, "', regardless of '", strataVar, "'."
+        )
       } else {
-        # Homogeneity exists
-        if (cmhSig) {
-          # Significant CMH with homogeneity: consistent conditional association
-          html <- paste0(html,
-                         "The CMH test indicates a significant conditional association between '",
-                         rowVar, "' and '", colVar, "' after controlling for '", strataVar, "'. ",
-                         "Given the homogeneity of odds ratios across strata, '", strataVar,
-                         "' does not significantly modify this association. ",
-                         "The conditional association between '", rowVar, "' and '", colVar,
-                         "' is consistent (in direction and magnitude) across levels of '", strataVar,
-                         "', and can be summarised using the Mantel-Haenszel estimate of a common odds ratio (",
-                         sprintf("%.3f", commonOR), "; 95%% CI: ", sprintf("%.3f", commonCI[1]), "\u2013", sprintf("%.3f", commonCI[2]), ")."
-          )
-        } else {
-          # Non-significant CMH with homogeneity: conditional independence
-          html <- paste0(html,
-                         "The CMH test does not indicate a significant conditional association between '",
-                         rowVar, "' and '", colVar, "' after controlling for '", strataVar, "'. ",
-                         "This suggests <strong>conditional independence</strong>: any marginal association, if present, ",
-                         "vanishes when the data are stratified by '", strataVar, "'."
-          )
-        }
+        html <- paste0(html,
+                       "The pattern is <strong>ambiguous</strong>: no overall association, but heterogeneous effects across strata. ",
+                       "Stratum-specific analyses should be examined."
+        )
       }
       
       html <- paste0(html, "</p>")
@@ -987,17 +1023,249 @@ chisqstrata2x2Class <- R6::R6Class(
       # ─────────────────────────────────────────────────────────────────────────
       
       html <- paste0(html,
-        "<p style='font-size: 0.9em; color: #666; margin-top: 1em;'><em>",
-        "Note: The interpretation guidelines provided are suggested based on the statistical tests' outcomes ",
-        "and should be further evaluated within the context of your study. In case a table features a zero ",
-        "along any of the diagonals, the Haldane-Anscombe correction (adding 0.5 to every cell) is applied ",
-        "for the calculation of the odds ratios and the weights used in the Mantel-Haenszel test of homogeneity.",
-        "</em></p>"
+                     "<p style='font-size: 0.9em; color: #666; margin-top: 1em;'><em>",
+                     "Note: The interpretation guidelines provided are suggested based on the statistical tests' outcomes ",
+                     "and should be further evaluated within the context of your study. In case a table features a zero ",
+                     "along any of the diagonals, the Haldane-Anscombe correction (adding 0.5 to every cell) is applied ",
+                     "for the calculation of the odds ratios and the weights used in the Mantel-Haenszel test of homogeneity.",
+                     "</em></p>"
       )
       
       html <- paste0(html, "</div>")
       
       self$results$interpretationNote$setContent(html)
+    },
+    
+    # ═══════════════════════════════════════════════════════════════════════════
+    # Populate: Diagnostic Summary
+    # ═══════════════════════════════════════════════════════════════════════════
+    
+    .populateDiagnosticSummary = function(marginalChiSq, pooledChiSq, cmhTest, mhResult, bdtResult,
+                                          orsAndCIs, rowVar, colVar, strataVar) {
+      
+      # Determine significance
+      marginalSig <- marginalChiSq$p.value < 0.05
+      pooledSig <- pooledChiSq$pvalue < 0.05
+      cmhSig <- cmhTest$p.value < 0.05
+      heterogeneitySig <- mhResult$pvalue < 0.05 || bdtResult$pvalue < 0.05
+      
+      # Assess heterogeneity type from odds ratios
+      orValues <- sapply(orsAndCIs, function(x) x$or)
+      directionChange <- any(orValues < 1) && any(orValues > 1)
+      
+      # Describe heterogeneity
+      if (heterogeneitySig) {
+        if (directionChange) {
+          heterogeneityDesc <- "in both strength and direction"
+        } else {
+          heterogeneityDesc <- "in strength (but not direction)"
+        }
+      } else {
+        heterogeneityDesc <- NULL
+      }
+      
+      # Determine scenario
+      if (marginalSig && !cmhSig && !heterogeneitySig) {
+        scenario <- "Spuriousness"
+        explanation <- paste0(
+          "<p><strong>Spuriousness</strong> occurs when an apparent association between two variables ",
+          "is entirely due to their separate relationships with a third variable.</p>",
+          "<p>In this analysis:</p>",
+          "<ul>",
+          "<li>The <strong>marginal table</strong> shows a significant association between '", rowVar, 
+          "' and '", colVar, "' (\u03C7\u00B2 = ", sprintf("%.2f", as.numeric(marginalChiSq$statistic)),
+          ", p = ", sprintf("%.3f", marginalChiSq$p.value), ").</li>",
+          "<li>The <strong>CMH test</strong> indicates conditional independence (\u03C7\u00B2 = ", 
+          sprintf("%.2f", as.numeric(cmhTest$statistic)), ", p = ", sprintf("%.3f", cmhTest$p.value),
+          "): the association disappears when stratified by '", strataVar, "'.</li>",
+          "<li>The <strong>homogeneity tests</strong> (MH: \u03C7\u00B2 = ", sprintf("%.2f", mhResult$statistic),
+          ", p = ", sprintf("%.3f", mhResult$pvalue), "; BDT: \u03C7\u00B2 = ", sprintf("%.2f", bdtResult$statistic),
+          ", p = ", sprintf("%.3f", bdtResult$pvalue), ") indicate that conditional odds ratios are consistent across strata.</li>",
+          "</ul>",
+          "<p><strong>Conclusion:</strong> The apparent marginal association between '", rowVar, 
+          "' and '", colVar, "' was attributable to their separate associations with '", strataVar,
+          "'. The stratifying variable acts as a <em>confounder</em>. ",
+          "Given the conditional independence, the common odds ratio is not meaningful.</p>"
+        )
+        
+      } else if (marginalSig && !cmhSig && heterogeneitySig && pooledSig && directionChange) {
+        # Interaction with CMH failure due to directional reversal
+        scenario <- "Interaction (Heterogeneous Association)"
+        explanation <- paste0(
+          "<p><strong>Interaction</strong> (heterogeneous association) occurs when the relationship between two variables ",
+          "varies in strength and/or direction across levels of a third variable.</p>",
+          "<p>In this analysis:</p>",
+          "<ul>",
+          "<li>The <strong>marginal table</strong> shows a significant association between '", rowVar, 
+          "' and '", colVar, "' (\u03C7\u00B2 = ", sprintf("%.2f", as.numeric(marginalChiSq$statistic)),
+          ", p = ", sprintf("%.3f", marginalChiSq$p.value), ").</li>",
+          "<li>The <strong>CMH test</strong> is non-significant (\u03C7\u00B2 = ", 
+          sprintf("%.2f", as.numeric(cmhTest$statistic)), ", p = ", sprintf("%.3f", cmhTest$p.value),
+          "); however, the <strong>pooled chi-squared test</strong> is significant (\u03C7\u00B2 = ",
+          sprintf("%.2f", pooledChiSq$statistic), ", p = ", sprintf("%.3f", pooledChiSq$pvalue),
+          "), indicating conditional dependence.</li>",
+          "<li>The <strong>homogeneity tests</strong> (MH: \u03C7\u00B2 = ", sprintf("%.2f", mhResult$statistic),
+          ", p = ", sprintf("%.3f", mhResult$pvalue), "; BDT: \u03C7\u00B2 = ", sprintf("%.2f", bdtResult$statistic),
+          ", p = ", sprintf("%.3f", bdtResult$pvalue), ") indicate heterogeneity ", heterogeneityDesc, " across strata.</li>",
+          "</ul>",
+          "<p><strong>Important:</strong> The CMH test is unreliable when stratum-specific associations operate in ",
+          "opposite directions, as the effects cancel out. The significant pooled chi-squared test indicates that ",
+          "conditional dependence exists despite the non-significant CMH result.</p>",
+          "<p><strong>Conclusion:</strong> The association between '", rowVar, 
+          "' and '", colVar, "' depends on the level of '", strataVar,
+          "'. The stratifying variable acts as an <em>effect modifier</em> producing effects that differ ", 
+          heterogeneityDesc, ". The common odds ratio is not a meaningful summary; stratum-specific odds ratios should be reported.</p>"
+        )
+        
+      } else if (marginalSig && !cmhSig && heterogeneitySig) {
+        scenario <- "Interpretation (Simpson's Paradox)"
+        explanation <- paste0(
+          "<p><strong>Interpretation</strong> (also known as Simpson's Paradox) occurs when the relationship ",
+          "between two variables reverses or changes substantially when a third variable is controlled.</p>",
+          "<p>In this analysis:</p>",
+          "<ul>",
+          "<li>The <strong>marginal table</strong> shows a significant association between '", rowVar, 
+          "' and '", colVar, "' (\u03C7\u00B2 = ", sprintf("%.2f", as.numeric(marginalChiSq$statistic)),
+          ", p = ", sprintf("%.3f", marginalChiSq$p.value), ").</li>",
+          "<li>The <strong>CMH test</strong> indicates conditional independence (\u03C7\u00B2 = ", 
+          sprintf("%.2f", as.numeric(cmhTest$statistic)), ", p = ", sprintf("%.3f", cmhTest$p.value),
+          "): the overall conditional association is not significant.</li>",
+          "<li>The <strong>homogeneity tests</strong> (MH: \u03C7\u00B2 = ", sprintf("%.2f", mhResult$statistic),
+          ", p = ", sprintf("%.3f", mhResult$pvalue), "; BDT: \u03C7\u00B2 = ", sprintf("%.2f", bdtResult$statistic),
+          ", p = ", sprintf("%.3f", bdtResult$pvalue), ") indicate heterogeneity ", heterogeneityDesc, " across strata.</li>",
+          "</ul>",
+          "<p><strong>Conclusion:</strong> The marginal association between '", rowVar, 
+          "' and '", colVar, "' does not reflect the within-stratum relationships. The stratifying variable '", 
+          strataVar, "' acts as an <em>effect modifier</em>. ",
+          "The common odds ratio is not a meaningful summary; stratum-specific odds ratios should be reported.</p>"
+        )
+        
+      } else if (marginalSig && cmhSig && !heterogeneitySig) {
+        scenario <- "Replication (Homogeneous Association)"
+        explanation <- paste0(
+          "<p><strong>Replication</strong> (homogeneous association) occurs when the association between two variables ",
+          "remains consistent in strength and direction across all levels of a third variable.</p>",
+          "<p>In this analysis:</p>",
+          "<ul>",
+          "<li>The <strong>marginal table</strong> shows a significant association between '", rowVar, 
+          "' and '", colVar, "' (\u03C7\u00B2 = ", sprintf("%.2f", as.numeric(marginalChiSq$statistic)),
+          ", p = ", sprintf("%.3f", marginalChiSq$p.value), ").</li>",
+          "<li>The <strong>CMH test</strong> indicates conditional dependence (\u03C7\u00B2 = ", 
+          sprintf("%.2f", as.numeric(cmhTest$statistic)), ", p = ", sprintf("%.3f", cmhTest$p.value),
+          "): a significant association persists when stratified by '", strataVar, "'.</li>",
+          "<li>The <strong>homogeneity tests</strong> (MH: \u03C7\u00B2 = ", sprintf("%.2f", mhResult$statistic),
+          ", p = ", sprintf("%.3f", mhResult$pvalue), "; BDT: \u03C7\u00B2 = ", sprintf("%.2f", bdtResult$statistic),
+          ", p = ", sprintf("%.3f", bdtResult$pvalue), ") indicate that conditional odds ratios are consistent across strata.</li>",
+          "</ul>",
+          "<p><strong>Conclusion:</strong> The association between '", rowVar, 
+          "' and '", colVar, "' is replicated across the levels of '", strataVar,
+          "'. The stratifying variable is neither a confounder nor an effect modifier. ",
+          "The Mantel-Haenszel common odds ratio provides a valid summary of the association.</p>"
+        )
+        
+      } else if (marginalSig && cmhSig && heterogeneitySig) {
+        scenario <- "Interaction (Heterogeneous Association)"
+        explanation <- paste0(
+          "<p><strong>Interaction</strong> (heterogeneous association, also termed specification or effect modification) ",
+          "occurs when the relationship between two variables varies in strength and/or direction across levels of a third variable.</p>",
+          "<p>In this analysis:</p>",
+          "<ul>",
+          "<li>The <strong>marginal table</strong> shows a significant association between '", rowVar, 
+          "' and '", colVar, "' (\u03C7\u00B2 = ", sprintf("%.2f", as.numeric(marginalChiSq$statistic)),
+          ", p = ", sprintf("%.3f", marginalChiSq$p.value), ").</li>",
+          "<li>The <strong>CMH test</strong> indicates conditional dependence (\u03C7\u00B2 = ", 
+          sprintf("%.2f", as.numeric(cmhTest$statistic)), ", p = ", sprintf("%.3f", cmhTest$p.value),
+          "): a significant association persists when stratified by '", strataVar, "'.</li>",
+          "<li>The <strong>homogeneity tests</strong> (MH: \u03C7\u00B2 = ", sprintf("%.2f", mhResult$statistic),
+          ", p = ", sprintf("%.3f", mhResult$pvalue), "; BDT: \u03C7\u00B2 = ", sprintf("%.2f", bdtResult$statistic),
+          ", p = ", sprintf("%.3f", bdtResult$pvalue), ") indicate heterogeneity ", heterogeneityDesc, " across strata.</li>",
+          "</ul>",
+          "<p><strong>Conclusion:</strong> The association between '", rowVar, 
+          "' and '", colVar, "' depends on the level of '", strataVar,
+          "'. The stratifying variable acts as an <em>effect modifier</em>. ",
+          "The common odds ratio is not a meaningful summary; stratum-specific odds ratios should be reported.</p>"
+        )
+        
+      } else if (!marginalSig && cmhSig) {
+        scenario <- "Suppression (Masking)"
+        explanation <- paste0(
+          "<p><strong>Suppression</strong> (also termed masking) occurs when a real association between two variables ",
+          "is hidden in the marginal table but emerges when a third variable is controlled.</p>",
+          "<p>In this analysis:</p>",
+          "<ul>",
+          "<li>The <strong>marginal table</strong> shows no significant association between '", rowVar, 
+          "' and '", colVar, "' (\u03C7\u00B2 = ", sprintf("%.2f", as.numeric(marginalChiSq$statistic)),
+          ", p = ", sprintf("%.3f", marginalChiSq$p.value), ").</li>",
+          "<li>The <strong>CMH test</strong> indicates conditional dependence (\u03C7\u00B2 = ", 
+          sprintf("%.2f", as.numeric(cmhTest$statistic)), ", p = ", sprintf("%.3f", cmhTest$p.value),
+          "): a significant association emerges when stratified by '", strataVar, "'.</li>",
+          "</ul>",
+          "<p><strong>Conclusion:</strong> The stratifying variable '", strataVar, 
+          "' was masking a real association between '", rowVar, "' and '", colVar, "'. ",
+          if (!heterogeneitySig) {
+            "The Mantel-Haenszel common odds ratio provides a valid summary of the conditional association."
+          } else {
+            "Given the heterogeneity, stratum-specific odds ratios should be reported."
+          },
+          "</p>"
+        )
+        
+      } else if (!marginalSig && !cmhSig && !heterogeneitySig) {
+        scenario <- "No Association"
+        explanation <- paste0(
+          "<p><strong>No association</strong> exists between the two primary variables, regardless of stratification.</p>",
+          "<p>In this analysis:</p>",
+          "<ul>",
+          "<li>The <strong>marginal table</strong> shows no significant association between '", rowVar, 
+          "' and '", colVar, "' (\u03C7\u00B2 = ", sprintf("%.2f", as.numeric(marginalChiSq$statistic)),
+          ", p = ", sprintf("%.3f", marginalChiSq$p.value), ").</li>",
+          "<li>The <strong>CMH test</strong> indicates conditional independence (\u03C7\u00B2 = ", 
+          sprintf("%.2f", as.numeric(cmhTest$statistic)), ", p = ", sprintf("%.3f", cmhTest$p.value), ").</li>",
+          "<li>The <strong>homogeneity tests</strong> (MH: \u03C7\u00B2 = ", sprintf("%.2f", mhResult$statistic),
+          ", p = ", sprintf("%.3f", mhResult$pvalue), "; BDT: \u03C7\u00B2 = ", sprintf("%.2f", bdtResult$statistic),
+          ", p = ", sprintf("%.3f", bdtResult$pvalue), ") indicate that conditional odds ratios are consistent (and close to 1) across strata.</li>",
+          "</ul>",
+          "<p><strong>Conclusion:</strong> There is no association between '", rowVar, 
+          "' and '", colVar, "', regardless of the level of '", strataVar, "'. ",
+          "The common odds ratio is close to 1 and not statistically significant.</p>"
+        )
+        
+      } else {
+        scenario <- "Ambiguous Pattern"
+        explanation <- paste0(
+          "<p><strong>Ambiguous pattern</strong>: the results suggest no overall association (neither marginal nor conditional), ",
+          "yet significant heterogeneity exists across strata, indicating that stratum-specific associations are present but cancel out.</p>",
+          "<p>In this analysis:</p>",
+          "<ul>",
+          "<li>The <strong>marginal table</strong> shows no significant association between '", rowVar, 
+          "' and '", colVar, "' (\u03C7\u00B2 = ", sprintf("%.2f", as.numeric(marginalChiSq$statistic)),
+          ", p = ", sprintf("%.3f", marginalChiSq$p.value), ").</li>",
+          "<li>The <strong>CMH test</strong> indicates conditional independence (\u03C7\u00B2 = ", 
+          sprintf("%.2f", as.numeric(cmhTest$statistic)), ", p = ", sprintf("%.3f", cmhTest$p.value), ").</li>",
+          "<li>The <strong>pooled chi-squared test</strong> is ",
+          if (pooledSig) "significant" else "not significant",
+          " (\u03C7\u00B2 = ", sprintf("%.2f", pooledChiSq$statistic),
+          ", p = ", sprintf("%.3f", pooledChiSq$pvalue), ").</li>",
+          "<li>The <strong>homogeneity tests</strong> (MH: \u03C7\u00B2 = ", sprintf("%.2f", mhResult$statistic),
+          ", p = ", sprintf("%.3f", mhResult$pvalue), "; BDT: \u03C7\u00B2 = ", sprintf("%.2f", bdtResult$statistic),
+          ", p = ", sprintf("%.3f", bdtResult$pvalue), ") indicate heterogeneity ", heterogeneityDesc, " across strata.</li>",
+          "</ul>",
+          "<p><strong>Conclusion:</strong> Associations may exist within individual strata but cancel out overall. ",
+          "This may also arise from insufficient statistical power. ",
+          "The common odds ratio is not a meaningful summary; stratum-specific odds ratios should be examined.</p>"
+        )
+      }
+      
+      # Build final HTML
+      html <- paste0(
+        "<div style='background-color: #f0f7fb; border-left: 4px solid #2874A6; ",
+        "padding: 15px; margin: 10px 0; font-family: sans-serif;'>",
+        "<h4 style='color: #2874A6; margin-top: 0;'>Diagnostic Summary: ", scenario, "</h4>",
+        explanation,
+        "</div>"
+      )
+      
+      self$results$diagnosticSummary$setContent(html)
     },
     
     # ═══════════════════════════════════════════════════════════════════════════
@@ -1077,7 +1345,19 @@ chisqstrata2x2Class <- R6::R6Class(
         
         <p><strong>Important caveat:</strong> If the stratum-specific odds ratios are in opposite directions 
         (some &gt; 1, some &lt; 1), the CMH test may fail to detect an association even when one exists, and the 
-        common OR may be misleading. In such cases, stratum-specific analyses should be prioritised.</p>
+        common OR may be misleading. In such cases, the <em>pooled chi-squared test</em> should be used (see below).</p>
+        
+        <h4 style='color: #2874A6; margin-top: 1em;'>Pooled Chi-Squared Test</h4>
+        <p>The pooled chi-squared test is the sum of the stratum-specific chi-squared statistics, with degrees 
+        of freedom equal to the sum of the stratum-specific degrees of freedom (Ott et al. 1992). Unlike the CMH test, which uses 
+        a weighted average approach, the pooled test accumulates evidence across strata without assuming a 
+        common direction of association.</p>
+        
+        <p>This test is particularly useful when stratum-specific associations operate in opposite directions. 
+        In such cases, the CMH test may fail to detect conditional dependence because effects cancel out, whereas 
+        the pooled chi-squared test will remain significant if strong associations exist within individual strata. 
+        When the pooled test is significant but the CMH test is not, this indicates that the CMH result should be 
+        interpreted with caution, and stratum-specific analyses should be examined.</p>
       ")
       
       # ─────────────────────────────────────────────────────────────────────────
@@ -1111,23 +1391,37 @@ chisqstrata2x2Class <- R6::R6Class(
       
       html <- paste0(html, "
         <h3 style='color: #2874A6; margin-top: 1.5em;'>Interpretational Scenarios</h3>
-        <p>The joint pattern of CMH and homogeneity test results leads to four interpretational scenarios 
-        (Azen & Walker 2021; Sheskin 2011):</p>
+        <p>The joint pattern of marginal significance, CMH test, and homogeneity test results leads to six 
+        interpretational scenarios (Agresti 2013; Azen & Walker 2021; Davis 1971; Ott et al. 1992; Reynolds 1977):</p>
         
         <ol>
-          <li><strong>Significant CMH with homogeneity (non-significant MH and BDT test):</strong> Indicates conditional dependence with 
-          consistent association across strata. The common odds ratio is a reliable summary.</li>
+          <li><strong>Spuriousness:</strong> Marginal association is significant, but disappears when stratified 
+          (non-significant CMH). The apparent relationship was due to X and Y's separate associations with Z. 
+          Z is a <em>confounder</em>.</li>
           
-          <li><strong>Significant CMH with heterogeneity (significant MH and BDT test):</strong> Suggests conditional dependence but 
-          varying strength and/or direction of association across strata (interaction). The common OR should not be 
-          used as a summary measure; report stratum-specific odds ratios instead.</li>
+         <li><strong>Interpretation (Simpson's Paradox):</strong> Marginal association is significant, CMH is 
+          non-significant, but heterogeneity exists. When the pooled chi-squared test is also significant (indicating 
+          conditional dependence despite the non-significant CMH), this indicates <strong>interaction with directional 
+          reversal</strong> — the CMH test is unreliable because stratum-specific associations operate in opposite 
+          directions. When the pooled test is non-significant, this suggests true Simpson's Paradox where stratum-specific 
+          effects cancel out. Z is an <em>effect modifier</em>.</li>
           
-         <li><strong>Non-significant CMH with homogeneity (non-significant MH and BDT test):</strong> Implies conditional independence: 
-          no association is detected within strata. Any marginal association (if originally present) vanishes when the data are stratified.</li>
+          <li><strong>Replication (Homogeneous Association):</strong> Both marginal and conditional associations 
+          are significant, with homogeneous odds ratios. The X–Y relationship is consistent across levels of Z. 
+          Z is neither a confounder nor an effect modifier.</li>
           
-          <li><strong>Non-significant CMH with heterogeneity (significant MH and BDT test):</strong> The most complex scenario. 
-          If odds ratios are in opposite directions across strata, the CMH test may be unreliable. 
-          Stratum-specific chi-squared tests should be evaluated.</li>
+          <li><strong>Interaction (Heterogeneous Association):</strong> Both marginal and conditional associations 
+          are significant, but odds ratios are heterogeneous. The X–Y relationship varies in strength and/or 
+          direction across levels of Z. Z is an <em>effect modifier</em>.</li>
+          
+          <li><strong>Suppression (Masking):</strong> No marginal association, but a conditional association 
+          emerges (significant CMH). Z was hiding a real X–Y relationship.</li>
+          
+          <li><strong>No Association:</strong> Neither marginal nor conditional association is significant, 
+          with homogeneous odds ratios near 1. No relationship exists between X and Y.</li>
+          
+          <li><strong>Ambiguous Pattern:</strong> No marginal or conditional association, but heterogeneous 
+          odds ratios. Opposing effects may cancel out, or power may be insufficient.</li>
         </ol>
       ")
       
@@ -1146,11 +1440,15 @@ chisqstrata2x2Class <- R6::R6Class(
         "<div style='font-size: 0.85em; color: #444; margin: 15px 0; line-height: 1.5;'>",
         "<h3 style='color: #2874A6; margin-top: 0.5em; margin-bottom: 0.5em;'>References</h3>",
         "<p style='margin-left: 20px; text-indent: -20px;'>",
+        "Agresti, A. (2013). <em>Categorical Data Analysis</em> (3rd ed.). Wiley.</p>",
+        "<p style='margin-left: 20px; text-indent: -20px;'>",
         "Alberti, G. (2024). <em>From Data to Insights. A Beginner's Guide to Cross-Tabulation Analysis</em>. Chapman & Hall.</p>",
         "<p style='margin-left: 20px; text-indent: -20px;'>",
         "Azen, R., & Walker, C. M. (2021). <em>Categorical Data Analysis for the Behavioral and Social Sciences</em> (2nd ed.). Routledge.</p>",
         "<p style='margin-left: 20px; text-indent: -20px;'>",
         "Breslow, N. E., & Day, N. E. (1980). <em>Statistical Methods in Cancer Research. Volume I: The Analysis of Case-Control Studies</em>. IARC Scientific Publications.</p>",
+        "<p style='margin-left: 20px; text-indent: -20px;'>",
+        "Davis, J. A. (1971). <em>Elementary Survey Analysis</em>. Prentice Hall.</p>",
         "<p style='margin-left: 20px; text-indent: -20px;'>",
         "Fleiss, J. L., Levin, B., & Paik, M. C. (2003). <em>Statistical Methods for Rates and Proportions</em> (3rd ed.). Wiley.</p>",
         "<p style='margin-left: 20px; text-indent: -20px;'>",
@@ -1158,7 +1456,11 @@ chisqstrata2x2Class <- R6::R6Class(
         "<p style='margin-left: 20px; text-indent: -20px;'>",
         "Lachin, J. M. (2000). <em>Biostatistical Methods: The Assessment of Relative Risks</em>. Wiley.</p>",
         "<p style='margin-left: 20px; text-indent: -20px;'>",
+        "Ott, R. L., Rexroat, C., Larson, R., & Mendenhall, W. (1992). <em>Statistics: A Tool for the Social Sciences</em> (5th ed.). PWS-KENT Publishing Company.</p>",
+        "<p style='margin-left: 20px; text-indent: -20px;'>",
         "Pagano, M., & Gauvreau, K. (2018). <em>Principles of Biostatistics</em> (2nd ed.). Chapman and Hall/CRC.</p>",
+        "<p style='margin-left: 20px; text-indent: -20px;'>",
+        "Reynolds, H. T. (1977). <em>The Analysis of Cross-Classifications</em>. The Free Press.</p>",
         "<p style='margin-left: 20px; text-indent: -20px;'>",
         "Sheskin, D. J. (2011). <em>Handbook of Parametric and Nonparametric Statistical Procedures</em> (5th ed.). Chapman & Hall/CRC.</p>",
         "</div>"
@@ -1218,52 +1520,6 @@ chisqstrata2x2Class <- R6::R6Class(
       return(list(
         data = plotData,
         n_strata = K
-      ))
-    },
-    
-    .prepareDiagnosticTreeData = function(cmh_p, mh_p, bdt_p) {
-      
-      # Guard against NULL, empty, or NA values
-      if (is.null(cmh_p) || is.null(mh_p) || is.null(bdt_p) ||
-          length(cmh_p) == 0 || length(mh_p) == 0 || length(bdt_p) == 0 ||
-          is.na(cmh_p) || is.na(mh_p) || is.na(bdt_p)) {
-        return(NULL)
-      }
-      
-      # Determine significance at α = 0.05
-      cmh_sig <- cmh_p < 0.05
-      mh_sig <- mh_p < 0.05
-      bdt_sig <- bdt_p < 0.05
-      
-      # Determine scenario (matching your interpretation logic)
-      if (cmh_sig && !mh_sig && !bdt_sig) {
-        scenario <- "Conditional dependence with homogeneity"
-        scenario_num <- 1
-        scenario_description <- "Homogeneous association:\nConsistent relationship across strata"
-      } else if (cmh_sig && (mh_sig || bdt_sig)) {
-        scenario <- "Conditional dependence with heterogeneity"
-        scenario_num <- 2
-        scenario_description <- "Heterogeneous association:\nEffect modification (interaction) present"
-      } else if (!cmh_sig && !mh_sig && !bdt_sig) {
-        scenario <- "Conditional independence with homogeneity"
-        scenario_num <- 3
-        scenario_description <- "Conditional independence:\nAssociation (if any) vanishes when stratified"
-      } else {
-        scenario <- "Conditional independence with heterogeneity"
-        scenario_num <- 4
-        scenario_description <- "Opposing associations:\nEffects cancel across strata"
-      }
-      
-      return(list(
-        cmh_p = cmh_p,
-        mh_p = mh_p,
-        bdt_p = bdt_p,
-        cmh_sig = cmh_sig,
-        mh_sig = mh_sig,
-        bdt_sig = bdt_sig,
-        scenario = scenario,
-        scenario_num = scenario_num,
-        scenario_description = scenario_description
       ))
     },
     
@@ -1426,138 +1682,6 @@ chisqstrata2x2Class <- R6::R6Class(
       )
       
       TRUE
-    },
-    
-    .diagnosticTree = function(image, ggtheme, theme, ...) {
-      
-      # Retrieve state
-      treeData <- image$state
-      
-      if (is.null(treeData)) {
-        return(FALSE)
-      }
-      
-      # Build flow-chart style decision tree
-      # Define node positions
-      nodes <- data.frame(
-        x = c(2, 1, 3, 0.5, 1.5, 2.5, 3.5),  # Horizontal positions
-        y = c(4, 2, 2, 0, 0, 0, 0),  # Vertical positions (4=top, 0=bottom)
-        label = c(
-          "CMH Test",
-          "Homogeneity Tests\n(MH & BDT)",
-          "Homogeneity Tests\n(MH & BDT)",
-          "Conditional independence:\nAssociation (if any) vanishes\nwhen stratified",
-          "Opposing associations:\nEffects cancel across strata",
-          "Homogeneous association:\nConsistent relationship\n(replication) across strata",
-          "Heterogeneous association:\nEffect modification \n(interaction) present"
-        ),
-        node_type = c("decision", "decision", "decision", 
-                      "terminal", "terminal", "terminal", "terminal"),
-        is_active = c(
-          TRUE,  # CMH always evaluated
-          !treeData$cmh_sig,  # Left homogeneity (if CMH non-sig)
-          treeData$cmh_sig,   # Right homogeneity (if CMH sig)
-          !treeData$cmh_sig && !treeData$mh_sig && !treeData$bdt_sig,  # Scenario 3
-          !treeData$cmh_sig && (treeData$mh_sig || treeData$bdt_sig),  # Scenario 4
-          treeData$cmh_sig && !treeData$mh_sig && !treeData$bdt_sig,   # Scenario 1
-          treeData$cmh_sig && (treeData$mh_sig || treeData$bdt_sig)    # Scenario 2
-        ),
-        stringsAsFactors = FALSE
-      )
-      
-      # Define edges (connections between nodes)
-      edges <- data.frame(
-        x = c(2, 2, 1, 1, 3, 3),
-        y = c(4, 4, 2, 2, 2, 2),
-        xend = c(1, 3, 0.5, 1.5, 2.5, 3.5),
-        yend = c(2, 2, 0, 0, 0, 0),
-        label = c(
-          "p > .05\n(non-sig)",
-          "p < .05\n(sig)",
-          "p > .05",
-          "p < .05",
-          "p > .05",
-          "p < .05"
-        ),
-        is_active = c(
-          !treeData$cmh_sig,
-          treeData$cmh_sig,
-          !treeData$cmh_sig && !treeData$mh_sig,
-          !treeData$cmh_sig && (treeData$mh_sig || treeData$bdt_sig),
-          treeData$cmh_sig && !treeData$mh_sig,
-          treeData$cmh_sig && (treeData$mh_sig || treeData$bdt_sig)
-        ),
-        stringsAsFactors = FALSE
-      )
-      
-      # Colour coding: active path in blue, inactive greyed out
-      nodes$fill_color <- ifelse(nodes$is_active & nodes$node_type == "terminal",
-                                 "#2874A6",  # Active terminal: blue
-                                 ifelse(nodes$is_active, "#ECF0F1",  # Active decision: light grey
-                                        "#BDC3C7"))  # Inactive: medium grey
-      
-      nodes$border_color <- ifelse(nodes$is_active, "#2C3E50", "#95A5A6")
-      nodes$text_color <- ifelse(nodes$is_active & nodes$node_type == "terminal",
-                                 "white", "#2C3E50")
-      
-      edges$line_color <- ifelse(edges$is_active, "#2C3E50", "#D5DBDB")
-      edges$line_width <- ifelse(edges$is_active, 1.2, 0.6)
-      
-      # Create plot
-      plot <- ggplot2::ggplot() +
-        
-        # Draw edges (arrows)
-        ggplot2::geom_segment(data = edges,
-                              ggplot2::aes(x = x, y = y, xend = xend, yend = yend,
-                                           color = line_color, linewidth = line_width),
-                              arrow = ggplot2::arrow(length = ggplot2::unit(0.2, "cm"), 
-                                                     type = "closed")) +
-        
-        # Edge labels
-        ggplot2::geom_text(data = edges,
-                           ggplot2::aes(x = (x + xend) / 2, y = (y + yend) / 2, label = label),
-                           size = 2.9, hjust = 0.5, vjust = -0.5, color = "#2C3E50") +
-        
-        # Draw nodes (rectangles)
-        # Terminal nodes get extra width for longer text
-        ggplot2::geom_rect(data = nodes,
-                           ggplot2::aes(xmin = ifelse(node_type == "terminal", x - 0.47, x - 0.37),
-                                        xmax = ifelse(node_type == "terminal", x + 0.47, x + 0.37),
-                                        ymin = y - 0.4, ymax = y + 0.4,
-                                        fill = fill_color, color = border_color),
-                           linewidth = 1) +
-        
-        # Node labels
-        ggplot2::geom_text(data = nodes,
-                           ggplot2::aes(x = x, y = y, label = label, color = text_color),
-                           size = 3.5, fontface = "bold", lineheight = 0.9) +
-        
-        # Manual scales
-        ggplot2::scale_color_identity() +
-        ggplot2::scale_fill_identity() +
-        ggplot2::scale_linewidth_identity() +
-        
-        # Coordinate system and limits
-        ggplot2::coord_cartesian(xlim = c(-0.5, 4.5), ylim = c(-0.8, 4.8)) +
-        
-        # Labels
-        ggplot2::labs(
-          title = "Diagnostic Decision Path",
-          subtitle = paste0("Your data: ", treeData$scenario)
-        ) +
-        
-        # Theme
-        ggplot2::theme_void() +
-        ggplot2::theme(
-          plot.title = ggplot2::element_text(hjust = 0.5, size = 13, face = "bold",
-                                             margin = ggplot2::margin(b = 5)),
-          plot.subtitle = ggplot2::element_text(hjust = 0.5, size = 11, 
-                                                color = "#2874A6", face = "bold",
-                                                margin = ggplot2::margin(b = 10))
-        )
-      
-      print(plot)
-      return(TRUE)
     },
     
     .trajectoryPlot = function(image, ggtheme, theme, ...) {

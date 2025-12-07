@@ -39,7 +39,7 @@ Cell-level diagnostic metrics including:
 ### 4. Row/Column Clustering
 Hierarchical clustering analysis using:
 - Ward's method with chi-squared distance (Greenacre, 2017)
-- Significance testing via permutation
+- Significance testing
 - Dendrogram visualisation
 
 ### 5. Stratified Analysis (2×2×K)

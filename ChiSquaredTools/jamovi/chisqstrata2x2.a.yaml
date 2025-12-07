@@ -153,14 +153,14 @@ options:
             stratum-specific odds ratios with 95% confidence intervals and
             the common Mantel-Haenszel odds ratio.
 
-    - name: showDiagnosticTree
-      title: Display diagnostic decision tree
+    - name: showDiagnosticSummary
+      title: Show diagnostic summary
       type: Bool
-      default: true
+      default: false
       description:
           R: >
-            TRUE or FALSE (default: TRUE), display a visual decision tree
-            showing the diagnostic pathway based on test results.
+            TRUE or FALSE (default: FALSE), display a textual summary
+            of the analytical outcome.
 
     - name: strataOrdered
       title: Treat stratifying variable as ordered

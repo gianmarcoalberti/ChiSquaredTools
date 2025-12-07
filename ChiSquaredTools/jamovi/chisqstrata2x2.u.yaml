@@ -89,8 +89,6 @@ children:
             name: showTrajectoryPlot
             enable: (strataOrdered)
             style: list-inline
-          - type: CheckBox
-            name: showDiagnosticTree
   
   # --- GROUP: Interpretive Guides ---
   - type: LayoutBox
@@ -101,5 +99,7 @@ children:
         children:
           - type: CheckBox
             name: showInterpretation
+          - type: CheckBox
+            name: showDiagnosticSummary
           - type: CheckBox
             name: showMethodInfo

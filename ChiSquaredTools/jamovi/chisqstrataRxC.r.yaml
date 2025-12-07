@@ -187,6 +187,16 @@ items:
         - strata
         - counts
 
+    - name: diagnosticSummary
+      title: Diagnostic Summary
+      type: Html
+      visible: (showDiagnosticSummary)
+      clearWith:
+        - rows
+        - cols
+        - strata
+        - counts
+
     - name: forestPlot
       title: Forest Plot of V Corrected
       type: Image
