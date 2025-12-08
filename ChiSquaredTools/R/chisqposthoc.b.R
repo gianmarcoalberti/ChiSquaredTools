@@ -673,8 +673,12 @@ chisqposthocClass <- R6::R6Class(
             
             # Deleted residual (equation 1.2)
             n_rc <- data_table[r, c]
-            e_safe <- max(e_star_rc, 1e-6)
-            r_star <- (n_rc - e_star_rc) / sqrt(e_safe)
+            
+            # Skip cells where expected value is effectively zero
+            # (indicates model collapse for this cell)
+            if (e_star_rc < 1e-6) next
+            
+            r_star <- (n_rc - e_star_rc) / sqrt(e_star_rc)
             
             if (abs(r_star) > max_abs_del_res) {
               max_abs_del_res <- abs(r_star)

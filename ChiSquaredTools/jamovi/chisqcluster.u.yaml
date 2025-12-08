@@ -29,8 +29,7 @@ children:
             name: counts
             maxItemCount: 1
             isTarget: true
-  
-  # --- GROUP: Plot Options ---
+ 
   - type: LayoutBox
     margin: large
     children:
@@ -41,8 +40,6 @@ children:
             name: plotRowDendro
           - type: CheckBox
             name: plotColDendro
-  
-  # --- GROUP: Display Options ---
   - type: LayoutBox
     margin: large
     children:

@@ -351,12 +351,19 @@ chisqclusterClass <- R6::R6Class(
         active_clusters_history[[i+1]] <- current_labels
       }
       
-      # Find last significant step
+      # Find last significant step using the Greenacre/Hirotsu criterion:
+      # Stop merging when an individual merge reduction exceeds the critical threshold
+      
       sig_step <- 0
-      for (i in 1:nrow(merge_stats)) {
-        if (merge_stats$chi_square[i] >= critical_value) {
+      
+      # Start from step 1 (first merge) and check each reduction
+      for (i in 2:nrow(merge_stats)) {
+        # Check if this merge's reduction is below the critical threshold
+        if (merge_stats$reduction[i] < critical_value) {
+          # This merge is acceptable (small reduction = similar categories)
           sig_step <- merge_stats$step[i]
         } else {
+          # This merge exceeds the threshold - stop before it
           break
         }
       }
@@ -478,6 +485,7 @@ chisqclusterClass <- R6::R6Class(
         "<strong>Interpretation:</strong> ", interpretation, "</p>",
         "</div>"
       )
+      
       self$results$rowClusterSummary$setContent(summary_html)
       
       # Populate merging sequence table
@@ -651,7 +659,24 @@ chisqclusterClass <- R6::R6Class(
       hc$order <- stats::order.dendrogram(stats::as.dendrogram(hc))
       
       # Calculate cut position in dendrogram space
-      cut_position <- result$initial_chi_square - result$critical_value
+      # Position the line BETWEEN the last accepted merge and first rejected merge
+      sig_step <- result$significant_step
+      
+      if (sig_step > 0 && sig_step < length(height_vector)) {
+        # Position halfway between last accepted and first rejected merge
+        last_accepted_height <- height_vector[sig_step]
+        first_rejected_height <- height_vector[sig_step + 1]
+        cut_position <- (last_accepted_height + first_rejected_height) / 2
+      } else if (sig_step == 0) {
+        # No merging justified - put line at bottom
+        cut_position <- 0
+      } else {
+        # All merges justified - put line at top
+        cut_position <- result$initial_chi_square
+      }
+      
+      # Calculate the displayed chi-square value at this position
+      displayed_chi_square <- result$initial_chi_square - cut_position
       
       # Determine text alignment to avoid truncation at plot edges
       # If critical value is small (< 40% of initial chi²), place text LEFT of line
@@ -699,8 +724,8 @@ chisqclusterClass <- R6::R6Class(
           "text",
           x = 0.5,
           y = cut_position,
-          label = sprintf("Significance threshold (χ² = %.2f)", result$critical_value),
-          hjust = text_hjust,  # ← ADAPTIVE alignment
+          label = sprintf("Clustering threshold (χ² = %.1f)", displayed_chi_square),
+          hjust = text_hjust,
           vjust = -0.5,
           color = "red",
           size = 3.5
@@ -739,7 +764,24 @@ chisqclusterClass <- R6::R6Class(
       hc$order <- stats::order.dendrogram(stats::as.dendrogram(hc))
       
       # Calculate cut position in dendrogram space
-      cut_position <- result$initial_chi_square - result$critical_value
+      # Position the line BETWEEN the last accepted merge and first rejected merge
+      sig_step <- result$significant_step
+      
+      if (sig_step > 0 && sig_step < length(height_vector)) {
+        # Position halfway between last accepted and first rejected merge
+        last_accepted_height <- height_vector[sig_step]
+        first_rejected_height <- height_vector[sig_step + 1]
+        cut_position <- (last_accepted_height + first_rejected_height) / 2
+      } else if (sig_step == 0) {
+        # No merging justified - put line at bottom
+        cut_position <- 0
+      } else {
+        # All merges justified - put line at top
+        cut_position <- result$initial_chi_square
+      }
+      
+      # Calculate the displayed chi-square value at this position
+      displayed_chi_square <- result$initial_chi_square - cut_position
       
       # Determine text alignment to avoid truncation at plot edges
       # If critical value is small (< 40% of initial chi²), place text LEFT of line
@@ -772,7 +814,7 @@ chisqclusterClass <- R6::R6Class(
           labels = hc$labels[hc$order]
         ) +
         ggplot2::labs(
-          title = "Row Clustering Dendrogram",
+          title = "Column Clustering Dendrogram",
           x = "",
           y = "Chi-squared statistic"
         ) +
@@ -787,8 +829,8 @@ chisqclusterClass <- R6::R6Class(
           "text",
           x = 0.5,
           y = cut_position,
-          label = sprintf("Significance threshold (χ² = %.2f)", result$critical_value),
-          hjust = text_hjust,  # ← ADAPTIVE alignment
+          label = sprintf("Clustering threshold (χ² = %.1f)", displayed_chi_square),
+          hjust = text_hjust,
           vjust = -0.5,
           color = "red",
           size = 3.5
@@ -842,11 +884,11 @@ chisqclusterClass <- R6::R6Class(
         "This creates the 'merging sequence' table, which shows how the association progressively declines ",
         "as categories are combined.</li>",
         
-        "<li><strong>Stopping criterion:</strong> Merging continues until χ² falls below a <strong>critical ",
-        "value</strong> adjusted for multiple comparisons. This critical value (from Pearson & Hartley 1972, ",
-        "as cited in Greenacre 2017, Exhibit A.1, p.254) controls the family-wise error rate at α = 0.05, ",
-        "accounting for the fact that we are conducting many implicit tests as we consider different ways ",
-        "to partition the table.</li>",
+        "<li><strong>Stopping criterion:</strong> Merging continues until an individual merge would cause ",
+        "a χ² reduction ≥ the critical threshold (Greenacre 2017, Hirotsu 1983). This critical value ",
+        "(from Pearson & Hartley 1972, as tabulated in Greenacre 2017, Exhibit A.1, p.254) controls ",
+        "the family-wise error rate at α = 0.05, accounting for the fact that we are conducting many ",
+        "implicit tests as we consider different ways to partition the table.</li>",
         
         "<li><strong>Identifying significant groups:</strong> The 'last significant step' is the final merge ",
         "at which χ² remains above the critical threshold. The clusters present at this step represent the ",
@@ -860,10 +902,18 @@ chisqclusterClass <- R6::R6Class(
         "means that the bottom of the tree (where individual items join) shows high χ² (close to the initial ",
         "value), whilst the top shows low χ² (as categories are progressively merged).</p>",
         
-        "<p>The <strong>red dashed line</strong> marks the critical value. Clusters that form <em>below</em> ",
-        "this line (i.e., whilst χ² remains above the threshold) are statistically significant at p = 0.05 ",
-        "after adjustment for multiple comparisons. Merges occurring <em>above</em> the line are not ",
-        "statistically justified—they reduce association below the acceptable threshold.</p>",
+        "<p><strong>Reading the dendrogram:</strong> The horizontal axis shows the remaining χ² statistic at ",
+        "each stage of merging. The red line's label indicates the χ² value at that position. This helps you ",
+        "verify visually that clusters to the left maintain sufficient association, whilst those to the right ",
+        "do not. The actual critical threshold value (which determines where the line is positioned) is shown ",
+        "in the summary statistics above.</p>",
+        
+        "<p>The <strong>red dashed line</strong> marks the clustering threshold—the point at which further ",
+        "merging would cause excessive information loss. The line is positioned in the gap between the last ",
+        "accepted merge and the first rejected merge. Clusters that form to the <em>left</em> of this line ",
+        "(where χ² is high) are statistically significant at p = 0.05 after adjustment for multiple comparisons. ",
+        "Merges occurring to the <em>right</em> of the line (where χ² is low) would destroy significant structure ",
+        "and are not statistically justified.</p>",
         
         "<h3 style='color: #2874A6; margin-top: 1.5em;'>Practical Interpretation</h3>",
         "<p><strong>Significant groups:</strong> Categories within the same group at the last significant ",
@@ -909,10 +959,15 @@ chisqclusterClass <- R6::R6Class(
         "<div style='font-size: 0.85em; color: #444; margin: 15px 0; line-height: 1.5;'>",
         "<h3 style='color: #2874A6; margin-top: 0.5em; margin-bottom: 0.5em;'>References</h3>",
         "<p style='margin-left: 20px; text-indent: -20px;'>",
+        "Bendixen, M.T. (1995). Compositional Perceptual Mapping Using Chi-squared Trees Analysis and Correspondence Analysis. ",
+        "<em>Journal of Marketing Management</em>, 11, 571–581.</p>",
+        "<p style='margin-left: 20px; text-indent: -20px;'>",
         "Greenacre, M. (1988). Clustering the Rows and Columns of a Contingency Table. <em>Journal of Classification</em>, 5, 39–51.</p>",
         "<p style='margin-left: 20px; text-indent: -20px;'>",
         "Greenacre, M. (2017). <em>Correspondence Analysis in Practice</em> (3rd ed.). Chapman & Hall/CRC.</p>",
         "<p style='margin-left: 20px; text-indent: -20px;'>",
+        "Hirotsu, C. (1983). Defining the Pattern of Association in Two-way Contingency Tables. ",
+        "<em>Biometrika</em>, 70(3), 579–589.</p>",
         "Pearson, E. S., & Hartley, H. O. (1972). <em>Biometrika Tables for Statisticians, Volume 2</em>. Cambridge University Press.</p>",
         "<p style='margin-left: 20px; text-indent: -20px;'>",
         "Ward, J. H. (1963). Hierarchical grouping to optimize an objective function. <em>Journal of the American Statistical Association</em>, 58(301), 236–244.</p>",

@@ -156,10 +156,10 @@ options:
     - name: showDiagnosticSummary
       title: Show diagnostic summary
       type: Bool
-      default: false
+      default: true
       description:
           R: >
-            TRUE or FALSE (default: FALSE), display a textual summary
+            TRUE or FALSE (default: TRUE), display a textual summary
             of the analytical outcome.
 
     - name: strataOrdered

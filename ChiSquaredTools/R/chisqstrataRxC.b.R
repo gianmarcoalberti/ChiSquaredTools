@@ -1085,8 +1085,9 @@ chisqstrataRxCClass <- R6::R6Class(
         if (cmhSig) {
           # Significant CMH with homogeneity: consistent conditional association
           html <- paste0(html,
-                         "The CMH test indicates a significant conditional association between '",
-                         rowVar, "' and '", colVar, "' after controlling for '", strataVar, "'. ",
+                         "The CMH test indicates significant conditional dependence between '",
+                         rowVar, "' and '", colVar, "' after controlling for '", strataVar, "': ",
+                         "the association between the row and column variables is not zero in at least one stratum. ",
                          "Given the homogeneity of association across strata, '", strataVar,
                          "' does not significantly modify this association. ",
                          "The conditional association between '", rowVar, "' and '", colVar,
@@ -1147,11 +1148,10 @@ chisqstrataRxCClass <- R6::R6Class(
       # Determine scenario (must match decision tree exactly)
       if (cmhSig && !loglinSig) {
         # Scenario 1: CMH significant, homogeneity holds
-        scenario <- "Homogeneous Association (Replication)"
+        scenario <- "Replication (Homogeneous Association)"
         explanation <- paste0(
-          "<p><strong>Homogeneous association</strong> (replication) indicates <em>conditional dependence</em>: ",
-          "a significant conditional association exists between the row and column variables after controlling for the stratifying variable, ",
-          "and this association is consistent in strength across all strata.</p>",
+          "<p><strong>Replication</strong> (homogeneous association) occurs when the association between two variables ",
+          "remains consistent in strength across all levels of a third variable.</p>",
           "<p>In this analysis:</p>",
           "<ul>",
           "<li>The <strong>generalised CMH test</strong> is significant (\u03C7\u00B2 = ",

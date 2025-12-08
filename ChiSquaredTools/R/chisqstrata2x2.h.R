@@ -15,7 +15,7 @@ chisqstrata2x2Options <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Cl
             showORAnnotation = TRUE,
             showPartialChiSq = TRUE,
             showForestPlot = TRUE,
-            showDiagnosticSummary = FALSE,
+            showDiagnosticSummary = TRUE,
             strataOrdered = FALSE,
             showTrajectoryPlot = TRUE,
             showInterpretation = TRUE,
@@ -79,7 +79,7 @@ chisqstrata2x2Options <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Cl
             private$..showDiagnosticSummary <- jmvcore::OptionBool$new(
                 "showDiagnosticSummary",
                 showDiagnosticSummary,
-                default=FALSE)
+                default=TRUE)
             private$..strataOrdered <- jmvcore::OptionBool$new(
                 "strataOrdered",
                 strataOrdered,
@@ -507,7 +507,7 @@ chisqstrata2x2Base <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class
 #' @param showForestPlot TRUE or FALSE (default: TRUE), display a forest plot
 #'   showing stratum-specific odds ratios with 95\% confidence intervals and the
 #'   common Mantel-Haenszel odds ratio.
-#' @param showDiagnosticSummary TRUE or FALSE (default: FALSE), display a
+#' @param showDiagnosticSummary TRUE or FALSE (default: TRUE), display a
 #'   textual summary of the analytical outcome.
 #' @param strataOrdered TRUE or FALSE (default: FALSE), treat the stratifying
 #'   variable as having a natural ordering. When enabled, allows trajectory plot
@@ -556,7 +556,7 @@ chisqstrata2x2 <- function(
     showORAnnotation = TRUE,
     showPartialChiSq = TRUE,
     showForestPlot = TRUE,
-    showDiagnosticSummary = FALSE,
+    showDiagnosticSummary = TRUE,
     strataOrdered = FALSE,
     showTrajectoryPlot = TRUE,
     showInterpretation = TRUE,

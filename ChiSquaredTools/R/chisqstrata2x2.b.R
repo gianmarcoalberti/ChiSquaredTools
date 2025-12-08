@@ -1066,6 +1066,9 @@ chisqstrata2x2Class <- R6::R6Class(
       
       # Determine scenario
       if (marginalSig && !cmhSig && !heterogeneitySig) {
+        # ─────────────────────────────────────────────────────────────────────
+        # SCENARIO 1: Spuriousness
+        # ─────────────────────────────────────────────────────────────────────
         scenario <- "Spuriousness"
         explanation <- paste0(
           "<p><strong>Spuriousness</strong> occurs when an apparent association between two variables ",
@@ -1089,11 +1092,13 @@ chisqstrata2x2Class <- R6::R6Class(
         )
         
       } else if (marginalSig && !cmhSig && heterogeneitySig && pooledSig && directionChange) {
-        # Interaction with CMH failure due to directional reversal
-        scenario <- "Interaction (Heterogeneous Association)"
+        # ─────────────────────────────────────────────────────────────────────
+        # SCENARIO 2: Interaction with Directional Reversal (CMH fails)
+        # ─────────────────────────────────────────────────────────────────────
+        scenario <- "Interaction (Heterogeneity - Directional Reversal)"
         explanation <- paste0(
-          "<p><strong>Interaction</strong> (heterogeneous association) occurs when the relationship between two variables ",
-          "varies in strength and/or direction across levels of a third variable.</p>",
+          "<p><strong>Interaction with directional reversal</strong> is a special case of heterogeneous association ",
+          "where stratum-specific odds ratios operate in opposite directions, causing the CMH test to fail.</p>",
           "<p>In this analysis:</p>",
           "<ul>",
           "<li>The <strong>marginal table</strong> shows a significant association between '", rowVar, 
@@ -1109,18 +1114,24 @@ chisqstrata2x2Class <- R6::R6Class(
           ", p = ", sprintf("%.3f", bdtResult$pvalue), ") indicate heterogeneity ", heterogeneityDesc, " across strata.</li>",
           "</ul>",
           "<p><strong>Important:</strong> The CMH test is unreliable when stratum-specific associations operate in ",
-          "opposite directions, as the effects cancel out. The significant pooled chi-squared test indicates that ",
-          "conditional dependence exists despite the non-significant CMH result.</p>",
-          "<p><strong>Conclusion:</strong> The association between '", rowVar, 
-          "' and '", colVar, "' depends on the level of '", strataVar,
+          "opposite directions, as the effects cancel out in the CMH weighted average calculation. The significant pooled chi-squared test ",
+          "correctly identifies that conditional dependence exists despite the non-significant CMH result.</p>",
+          "<p><strong>Note:</strong> The heterogeneity involves <em>directional reversal</em> (odds ratios in opposite directions). ",
+          "This represents the special case where the CMH test fails to detect conditional dependence due to perfect or near-perfect ",
+          "cancellation of opposing effects. The pooled chi-squared test is the appropriate diagnostic in this situation.</p>",
+          "<p><strong>Conclusion:</strong> A conditional association exists between '", rowVar, 
+          "' and '", colVar, "' given '", strataVar, "', and the association depends on the level of '", strataVar,
           "'. The stratifying variable acts as an <em>effect modifier</em> producing effects that differ ", 
           heterogeneityDesc, ". The common odds ratio is not a meaningful summary; stratum-specific odds ratios should be reported.</p>"
         )
         
       } else if (marginalSig && !cmhSig && heterogeneitySig) {
-        scenario <- "Interpretation (Simpson's Paradox)"
+        # ─────────────────────────────────────────────────────────────────────
+        # SCENARIO 3: Simpson's Paradox (true cancellation, weaker effects)
+        # ─────────────────────────────────────────────────────────────────────
+        scenario <- "Simpson's Paradox"
         explanation <- paste0(
-          "<p><strong>Interpretation</strong> (also known as Simpson's Paradox) occurs when the relationship ",
+          "<p><strong>Simpson's Paradox</strong> occurs when the relationship ",
           "between two variables reverses or changes substantially when a third variable is controlled.</p>",
           "<p>In this analysis:</p>",
           "<ul>",
@@ -1134,13 +1145,16 @@ chisqstrata2x2Class <- R6::R6Class(
           ", p = ", sprintf("%.3f", mhResult$pvalue), "; BDT: \u03C7\u00B2 = ", sprintf("%.2f", bdtResult$statistic),
           ", p = ", sprintf("%.3f", bdtResult$pvalue), ") indicate heterogeneity ", heterogeneityDesc, " across strata.</li>",
           "</ul>",
-          "<p><strong>Conclusion:</strong> The marginal association between '", rowVar, 
+          "<p><strong>Conclusion:</strong> The CMH test suggests conditional independence overall, yet the heterogeneity indicates that stratum-specific associations exist but cancel out in aggregate. The marginal association between '", rowVar, 
           "' and '", colVar, "' does not reflect the within-stratum relationships. The stratifying variable '", 
           strataVar, "' acts as an <em>effect modifier</em>. ",
           "The common odds ratio is not a meaningful summary; stratum-specific odds ratios should be reported.</p>"
         )
         
       } else if (marginalSig && cmhSig && !heterogeneitySig) {
+        # ─────────────────────────────────────────────────────────────────────
+        # SCENARIO 4: Replication (Homogeneous Association)
+        # ─────────────────────────────────────────────────────────────────────
         scenario <- "Replication (Homogeneous Association)"
         explanation <- paste0(
           "<p><strong>Replication</strong> (homogeneous association) occurs when the association between two variables ",
@@ -1157,14 +1171,17 @@ chisqstrata2x2Class <- R6::R6Class(
           ", p = ", sprintf("%.3f", mhResult$pvalue), "; BDT: \u03C7\u00B2 = ", sprintf("%.2f", bdtResult$statistic),
           ", p = ", sprintf("%.3f", bdtResult$pvalue), ") indicate that conditional odds ratios are consistent across strata.</li>",
           "</ul>",
-          "<p><strong>Conclusion:</strong> The association between '", rowVar, 
-          "' and '", colVar, "' is replicated across the levels of '", strataVar,
+          "<p><strong>Conclusion:</strong> A conditional association exists between '", rowVar, 
+          "' and '", colVar, "' given '", strataVar, "', and this association is replicated across the levels of '", strataVar,
           "'. The stratifying variable is neither a confounder nor an effect modifier. ",
-          "The Mantel-Haenszel common odds ratio provides a valid summary of the association.</p>"
+          "The Mantel-Haenszel common odds ratio provides a valid summary of this conditional association.</p>"
         )
         
       } else if (marginalSig && cmhSig && heterogeneitySig) {
-        scenario <- "Interaction (Heterogeneous Association)"
+        # ─────────────────────────────────────────────────────────────────────
+        # SCENARIO 5: Interaction (Heterogeneous Association - general case)
+        # ─────────────────────────────────────────────────────────────────────
+        scenario <- "Interaction (Heterogeneity - No Directional Reversal)"
         explanation <- paste0(
           "<p><strong>Interaction</strong> (heterogeneous association, also termed specification or effect modification) ",
           "occurs when the relationship between two variables varies in strength and/or direction across levels of a third variable.</p>",
@@ -1180,13 +1197,25 @@ chisqstrata2x2Class <- R6::R6Class(
           ", p = ", sprintf("%.3f", mhResult$pvalue), "; BDT: \u03C7\u00B2 = ", sprintf("%.2f", bdtResult$statistic),
           ", p = ", sprintf("%.3f", bdtResult$pvalue), ") indicate heterogeneity ", heterogeneityDesc, " across strata.</li>",
           "</ul>",
-          "<p><strong>Conclusion:</strong> The association between '", rowVar, 
-          "' and '", colVar, "' depends on the level of '", strataVar,
-          "'. The stratifying variable acts as an <em>effect modifier</em>. ",
+          if (directionChange) {
+            paste0("<p><strong>Note:</strong> The heterogeneity involves <em>directional reversal</em> (odds ratios in opposite directions). ",
+                   "However, because the CMH test is significant, it successfully identifies conditional dependence despite the opposing directions. ",
+                   "This differs from the special case (interaction with directional reversal) where opposing effects perfectly cancel out, ",
+                   "causing the CMH test to fail while the pooled chi-squared test remains significant.</p>")
+          } else {
+            paste0("<p><strong>Note:</strong> The heterogeneity involves differences in <em>strength only</em> while maintaining a consistent direction ",
+                   "across strata (all odds ratios are either consistently above 1 or consistently below 1).</p>")
+          },
+          "<p><strong>Conclusion:</strong> A conditional association exists between '", rowVar, 
+          "' and '", colVar, "' given '", strataVar, "', and the association depends on the level of '", strataVar,
+          "'. The stratifying variable acts as an <em>effect modifier</em> producing effects that differ ", heterogeneityDesc, ". ",
           "The common odds ratio is not a meaningful summary; stratum-specific odds ratios should be reported.</p>"
         )
         
       } else if (!marginalSig && cmhSig) {
+        # ─────────────────────────────────────────────────────────────────────
+        # SCENARIO 6: Suppression (Masking)
+        # ─────────────────────────────────────────────────────────────────────
         scenario <- "Suppression (Masking)"
         explanation <- paste0(
           "<p><strong>Suppression</strong> (also termed masking) occurs when a real association between two variables ",
@@ -1200,8 +1229,9 @@ chisqstrata2x2Class <- R6::R6Class(
           sprintf("%.2f", as.numeric(cmhTest$statistic)), ", p = ", sprintf("%.3f", cmhTest$p.value),
           "): a significant association emerges when stratified by '", strataVar, "'.</li>",
           "</ul>",
-          "<p><strong>Conclusion:</strong> The stratifying variable '", strataVar, 
-          "' was masking a real association between '", rowVar, "' and '", colVar, "'. ",
+          "<p><strong>Conclusion:</strong> A conditional association exists between '", rowVar, 
+          "' and '", colVar, "' given '", strataVar, "', even though no marginal association was detected. The stratifying variable '", strataVar, 
+          "' was masking this real association. ",
           if (!heterogeneitySig) {
             "The Mantel-Haenszel common odds ratio provides a valid summary of the conditional association."
           } else {
@@ -1211,6 +1241,9 @@ chisqstrata2x2Class <- R6::R6Class(
         )
         
       } else if (!marginalSig && !cmhSig && !heterogeneitySig) {
+        # ─────────────────────────────────────────────────────────────────────
+        # SCENARIO 7: No Association
+        # ─────────────────────────────────────────────────────────────────────
         scenario <- "No Association"
         explanation <- paste0(
           "<p><strong>No association</strong> exists between the two primary variables, regardless of stratification.</p>",
@@ -1231,6 +1264,9 @@ chisqstrata2x2Class <- R6::R6Class(
         )
         
       } else {
+        # ─────────────────────────────────────────────────────────────────────
+        # SCENARIO 8: Ambiguous Pattern
+        # ─────────────────────────────────────────────────────────────────────
         scenario <- "Ambiguous Pattern"
         explanation <- paste0(
           "<p><strong>Ambiguous pattern</strong>: the results suggest no overall association (neither marginal nor conditional), ",
@@ -1250,7 +1286,7 @@ chisqstrata2x2Class <- R6::R6Class(
           ", p = ", sprintf("%.3f", mhResult$pvalue), "; BDT: \u03C7\u00B2 = ", sprintf("%.2f", bdtResult$statistic),
           ", p = ", sprintf("%.3f", bdtResult$pvalue), ") indicate heterogeneity ", heterogeneityDesc, " across strata.</li>",
           "</ul>",
-          "<p><strong>Conclusion:</strong> Associations may exist within individual strata but cancel out overall. ",
+          "<p><strong>Conclusion:</strong> The CMH test suggests conditional independence overall, but the heterogeneity indicates that associations may exist within individual strata yet cancel out in aggregate. ",
           "This may also arise from insufficient statistical power. ",
           "The common odds ratio is not a meaningful summary; stratum-specific odds ratios should be examined.</p>"
         )
@@ -1353,11 +1389,11 @@ chisqstrata2x2Class <- R6::R6Class(
         a weighted average approach, the pooled test accumulates evidence across strata without assuming a 
         common direction of association.</p>
         
-        <p>This test is particularly useful when stratum-specific associations operate in opposite directions. 
-        In such cases, the CMH test may fail to detect conditional dependence because effects cancel out, whereas 
+        <p>This test is particularly useful when stratum-specific associations operate in opposite directions (see under <em>bullet point 4</em> below). 
+        In such cases, the CMH test may fail to detect conditional dependence because effects cancel out (Azen & Walker 2021), whereas 
         the pooled chi-squared test will remain significant if strong associations exist within individual strata. 
         When the pooled test is significant but the CMH test is not, this indicates that the CMH result should be 
-        interpreted with caution, and stratum-specific analyses should be examined.</p>
+        interpreted with caution.</p>
       ")
       
       # ─────────────────────────────────────────────────────────────────────────
@@ -1390,40 +1426,58 @@ chisqstrata2x2Class <- R6::R6Class(
       # ─────────────────────────────────────────────────────────────────────────
       
       html <- paste0(html, "
-        <h3 style='color: #2874A6; margin-top: 1.5em;'>Interpretational Scenarios</h3>
-        <p>The joint pattern of marginal significance, CMH test, and homogeneity test results leads to six 
-        interpretational scenarios (Agresti 2013; Azen & Walker 2021; Davis 1971; Ott et al. 1992; Reynolds 1977):</p>
-        
-        <ol>
-          <li><strong>Spuriousness:</strong> Marginal association is significant, but disappears when stratified 
-          (non-significant CMH). The apparent relationship was due to X and Y's separate associations with Z. 
-          Z is a <em>confounder</em>.</li>
-          
-         <li><strong>Interpretation (Simpson's Paradox):</strong> Marginal association is significant, CMH is 
-          non-significant, but heterogeneity exists. When the pooled chi-squared test is also significant (indicating 
-          conditional dependence despite the non-significant CMH), this indicates <strong>interaction with directional 
-          reversal</strong> — the CMH test is unreliable because stratum-specific associations operate in opposite 
-          directions. When the pooled test is non-significant, this suggests true Simpson's Paradox where stratum-specific 
-          effects cancel out. Z is an <em>effect modifier</em>.</li>
-          
-          <li><strong>Replication (Homogeneous Association):</strong> Both marginal and conditional associations 
-          are significant, with homogeneous odds ratios. The X–Y relationship is consistent across levels of Z. 
-          Z is neither a confounder nor an effect modifier.</li>
-          
-          <li><strong>Interaction (Heterogeneous Association):</strong> Both marginal and conditional associations 
-          are significant, but odds ratios are heterogeneous. The X–Y relationship varies in strength and/or 
-          direction across levels of Z. Z is an <em>effect modifier</em>.</li>
-          
-          <li><strong>Suppression (Masking):</strong> No marginal association, but a conditional association 
-          emerges (significant CMH). Z was hiding a real X–Y relationship.</li>
-          
-          <li><strong>No Association:</strong> Neither marginal nor conditional association is significant, 
-          with homogeneous odds ratios near 1. No relationship exists between X and Y.</li>
-          
-          <li><strong>Ambiguous Pattern:</strong> No marginal or conditional association, but heterogeneous 
-          odds ratios. Opposing effects may cancel out, or power may be insufficient.</li>
-        </ol>
-      ")
+  <h3 style='color: #2874A6; margin-top: 1.5em;'>Interpretational Scenarios</h3>
+ <p>The joint pattern of marginal significance, CMH test, pooled chi-squared test, and homogeneity test results leads to seven 
+  interpretational scenarios (Agresti 2013; Azen & Walker 2021; Davis 1971; Ott et al. 1992; Reynolds 1977). Note that 
+  Scenario 4 (Interaction/Heterogeneous Association) manifests in three forms distinguished by the presence of directional 
+  reversal and CMH test behavior:</p>
+  
+  <ol>
+    <li><strong>Spuriousness:</strong> Marginal association is significant, but disappears when stratified 
+    (non-significant CMH and non-significant pooled chi-squared). The stratum-specific odds ratios are 
+    homogeneous and near 1. The apparent marginal relationship was due to X and Y's separate associations with Z. 
+    Z is a <em>confounder</em>.</li>
+    
+    <li><strong>Simpson's Paradox (True Cancellation):</strong> Marginal association is significant, 
+    but both the CMH test and pooled chi-squared test are non-significant, indicating true conditional 
+    independence overall. However, heterogeneity tests are significant, revealing that stratum-specific 
+    associations exist but genuinely cancel out in aggregate. Z is an <em>effect modifier</em>.</li>
+    
+    <li><strong>Replication (Homogeneous Association):</strong> Both marginal and conditional associations 
+    are significant (CMH test), with homogeneous odds ratios across strata. The X–Y relationship is consistent 
+    in strength and direction across levels of Z. Z is neither a confounder nor an effect modifier.</li>
+    
+    <li><strong>Interaction (Heterogeneous Association):</strong> Both marginal and conditional associations 
+    are significant (CMH test), but odds ratios are heterogeneous across strata. The X–Y relationship varies 
+    across levels of Z. Z is an <em>effect modifier</em>. This general pattern manifests in three forms:
+      <ul style='margin-top: 0.5em;'>
+        <li><strong>Heterogeneity - No directional reversal:</strong> Odds ratios differ in magnitude whilst maintaining 
+        a consistent direction (all odds ratios either consistently above 1 or consistently below 1). The CMH test 
+        successfully identifies conditional dependence.</li>
+        <li><strong>Heterogeneity - With directional reversal (CMH succeeds):</strong> Odds ratios operate in opposite directions 
+        (some &gt; 1, some &lt; 1). Despite the directional reversal, the CMH test successfully identifies conditional 
+        dependence because the opposing effects are not perfectly balanced. This differs from the special case below.</li>
+        <li><strong>Heterogeneity - With directional reversal (Special Case - CMH fails):</strong> Marginal association 
+        is significant, but the CMH test is non-significant whilst the pooled chi-squared test is significant. 
+        Stratum-specific odds ratios operate in opposite directions (some &gt; 1, some &lt; 1), causing the CMH test 
+        to fail because opposing effects perfectly or near-perfectly cancel out in the weighted average. The pooled 
+        chi-squared test correctly detects that conditional dependence exists. This scenario demonstrates the CMH 
+        test's blind spot and the diagnostic value of the pooled chi-squared test.</li>
+      </ul>
+    </li>
+    
+    <li><strong>Suppression (Masking):</strong> No marginal association, but a conditional association 
+    emerges when stratified (significant CMH). Z was hiding a real X–Y relationship.</li>
+    
+    <li><strong>No Association:</strong> Neither marginal nor conditional association is significant, 
+    with homogeneous odds ratios near 1. No relationship exists between X and Y, regardless of Z.</li>
+    
+    <li><strong>Ambiguous Pattern:</strong> No marginal or conditional association detected (non-significant 
+    CMH), but heterogeneous odds ratios are present. This pattern may arise from opposing stratum-specific 
+    effects that are too weak to reach significance individually, insufficient statistical power, or random 
+    heterogeneity. Stratum-specific analyses should be examined.</li>
+  </ol>
+  ")
       
       html <- paste0(html, "</div>")
       

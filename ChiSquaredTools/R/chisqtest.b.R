@@ -492,7 +492,11 @@ chisqtestClass <- R6::R6Class(
         
         text(x = observed_chisq, 
              y = max(hist_data$counts) * 0.7,
-             labels = sprintf("p = %.4f", p_perm),
+             labels = if (p_perm < 0.001) {
+               "p < 0.001"
+             } else {
+               sprintf("p = %.3f", p_perm)
+             },
              pos = 4,  # Text to the RIGHT of line
              col = "red",
              font = 2)
@@ -511,7 +515,11 @@ chisqtestClass <- R6::R6Class(
         
         text(x = observed_chisq, 
              y = max(hist_data$counts) * 0.7,
-             labels = sprintf("p = %.4f", p_perm),
+             labels = if (p_perm < 0.001) {
+               "p < 0.001"
+             } else {
+               sprintf("p = %.3f", p_perm)
+             },
              pos = 2,  # Text to the LEFT of line (avoids right margin)
              col = "red",
              font = 2)
@@ -533,9 +541,15 @@ chisqtestClass <- R6::R6Class(
                col = "red", lwd = 2, length = 0.15, angle = 20)
         
         # Add text annotation
+        p_text <- if (p_perm < 0.001) {
+          "< 0.001"
+        } else {
+          sprintf("%.3f", p_perm)
+        }
+        
         text(x = x_max * 0.92, 
              y = y_arrow,
-             labels = sprintf("Obs. χ² = %.2f\n(off scale)\np = %.4f", observed_chisq, p_perm),
+             labels = sprintf("Obs. χ² = %.2f\n(off scale)\np = %s", observed_chisq, p_text),
              pos = 2,
              col = "red",
              font = 2,
@@ -586,7 +600,11 @@ chisqtestClass <- R6::R6Class(
         
         text(x = observed_chisq, 
              y = max(hist_data$counts) * 0.7,
-             labels = sprintf("p = %.4f", p_mc),
+             labels = if (p_mc < 0.001) {
+               "p < 0.001"
+             } else {
+               sprintf("p = %.3f", p_mc)
+             },
              pos = 4,  # Text to the RIGHT of line
              col = "red",
              font = 2)
@@ -605,7 +623,11 @@ chisqtestClass <- R6::R6Class(
         
         text(x = observed_chisq, 
              y = max(hist_data$counts) * 0.7,
-             labels = sprintf("p = %.4f", p_mc),
+             labels = if (p_mc < 0.001) {
+               "p < 0.001"
+             } else {
+               sprintf("p = %.3f", p_mc)
+             },
              pos = 2,  # Text to the LEFT of line (avoids right margin)
              col = "red",
              font = 2)
@@ -627,9 +649,15 @@ chisqtestClass <- R6::R6Class(
                col = "red", lwd = 2, length = 0.15, angle = 20)
         
         # Add text annotation
+        p_text <- if (p_mc < 0.001) {
+          "< 0.001"
+        } else {
+          sprintf("%.3f", p_mc)
+        }
+        
         text(x = x_max * 0.92, 
              y = y_arrow,
-             labels = sprintf("Obs. χ² = %.2f\n(off scale)\np = %.4f", observed_chisq, p_mc),
+             labels = sprintf("Obs. χ² = %.2f\n(off scale)\np = %s", observed_chisq, p_text),
              pos = 2,
              col = "red",
              font = 2,
