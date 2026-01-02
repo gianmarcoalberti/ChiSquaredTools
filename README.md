@@ -45,8 +45,7 @@ Statistical power tools for study planning:
 
 ### 5. Row/Column Clustering
 Hierarchical clustering analysis using:
-- Ward's method with chi-squared distance (Greenacre, 2017)
-- Significance testing
+- Ward's method with (A) chi-squared distance (Greenacre, 2017), or (B) Inertia Gain Ratio (Husson et al., 2017)
 - Dendrogram visualisation
 
 ### 6. Stratified Analysis (2×2×K)
