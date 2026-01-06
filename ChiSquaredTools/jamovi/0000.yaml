@@ -20,11 +20,13 @@ description: >-
   Estimated Proportions (DEP); (3) Association measures with over 20
   coefficients organised by statistical foundation, including chi-squared-based,
   margin-free, and PRE measures; (4) Power analysis for a priori sample size
-  determination, post-hoc power calculation, and sensitivity analysis; (5)
+  determination, post-hoc power calculation, and sensitivity analysis; (5) 
+  Simultaneous Reduction of Dimension (SRD) for sparse contingency tables using 
+  the Orton and Tyers (1991) method with significance-based merging; (6)
   Hierarchical clustering using Ward's method with chi-squared distance and
-  significance testing; (6) Stratified analysis for 2x2xK tables with
+  significance testing; (7) Stratified analysis for 2x2xK tables with
   Cochran-Mantel-Haenszel test, Breslow-Day-Tarone homogeneity test, and forest
-  plots; (7) Stratified analysis for RxCxK tables with generalised CMH test,
+  plots; (8) Stratified analysis for RxCxK tables with generalised CMH test,
   log-linear homogeneity test, and trajectory plots. Features toggleable method
   explanations with rationale and usage guidance, automatic significance
   highlighting, diagnostic decision trees, and proper academic citations.
@@ -64,6 +66,15 @@ analyses:
     menuGroup: Chi² Tools
     menuTitle: Power Analysis
     description: Power analysis for chi-squared tests of independence.
+  - title: Simultaneous Reduction of Dimension (SRD)
+    name: chisqsrd
+    ns: ChiSquaredTools
+    category: analyses
+    menuGroup: Chi² Tools
+    menuTitle: Table Reduction (SRD)
+    description: |-
+      Simultaneous Reduction of Dimension (SRD) for sparse contingency tables
+      using the Orton & Tyers (1991) method.
   - title: Contingency Table Row/Column Clustering
     name: chisqcluster
     ns: ChiSquaredTools

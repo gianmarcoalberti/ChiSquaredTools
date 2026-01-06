@@ -142,6 +142,15 @@ refs:
         volume: 40
         pages: '43-63'
 
+    cochran1954:
+        type: 'article'
+        author: 'Cochran, W. G.'
+        year: 1954
+        title: 'Some Methods for Strengthening the Common Chi-Squared Test'
+        publisher: 'Biometrics'
+        volume: 10
+        pages: '417-451'
+
     cohen1988:
         type: 'book'
         author: 'Cohen, J.'
@@ -261,7 +270,6 @@ refs:
         volume: '[volume]'
         pages: '[pages]'
 
-
     garciaperez2003:
         type: 'article'
         author: 'Garcia-Perez, M. A., & Nunez-Anton, V.'
@@ -308,6 +316,14 @@ refs:
         year: 1979
         title: 'Measures of Association for Cross Classifications'
         publisher: 'Springer-Verlag'
+
+    greenacre1984:
+        type: 'book'
+        author: 'Greenacre, M. J.'
+        year: 1984
+        title: 'Theory and Applications of Correspondence Analysis'
+        publisher: 'Academic Press'
+        address: 'London'
 
     greenacre1988:
         type: 'article'
@@ -495,6 +511,15 @@ refs:
         volume: 8
         issue: 3
         pages: 'e58777'
+
+    ortontyers1991:
+        type: 'article'
+        author: 'Orton, C., & Tyers, P.'
+        year: 1991
+        title: 'A Technique for Reducing the Size of Sparse Contingency Tables'
+        publisher: 'CAA90: Computer Applications and Quantitative Methods in Archaeology 1990 (BAR International Series 565)'
+        pages: '121-126'
+        note: 'Edited by S. Rahtz and K. Lockyear. Tempus Reparatum, Oxford'
 
     ott1992:
         type: 'book'

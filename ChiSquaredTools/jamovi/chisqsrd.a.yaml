@@ -1,0 +1,120 @@
+---
+name: chisqsrd
+title: Simultaneous Reduction of Dimension (SRD)
+menuGroup: Chi² Tools
+menuTitle: Table Reduction (SRD)
+version: '1.0.0'
+jas: '1.2'
+description:
+    main: |
+        Simultaneous Reduction of Dimension (SRD) for sparse contingency tables
+        using the Orton & Tyers (1991) method.
+        
+        Provides:
+        - Pruning of categories too small to contribute meaningful information
+        - Iterative merging of statistically indistinguishable rows and columns
+        - Chi-squared distance-based similarity assessment
+        - Significance testing for each proposed merge
+        - Reduced contingency table with composite category labels
+        - Detailed merge history with p-values
+        
+        The method addresses sparse tables where many cells have small or zero 
+        counts, which inflate degrees of freedom and mask genuine patterns. 
+        Unlike hierarchical clustering which merges greedily, SRD only merges 
+        categories that are statistically indistinguishable at the specified 
+        alpha level.
+        
+    R:
+        dontrun: false
+        usage: |
+            # Basic SRD analysis
+            chisqsrd(
+                data = mydata,
+                rows = 'fabric',
+                cols = 'form',
+                alpha = 0.05
+            )
+            
+            # With pruning disabled
+            chisqsrd(
+                data = mydata,
+                rows = 'fabric',
+                cols = 'form',
+                doPruning = FALSE,
+                alpha = 0.05
+            )
+
+completeWhenFilled: false
+
+options:
+    - name: data
+      type: Data
+      description:
+          R: the data as a data frame
+
+    - name: rows
+      title: Row Variable
+      type: Variable
+      suggested:
+        - nominal
+        - ordinal
+      permitted:
+        - factor
+      description:
+          R: >
+            a string naming the variable for rows in the contingency table
+            (must be a factor)
+
+    - name: cols
+      title: Column Variable
+      type: Variable
+      suggested:
+        - nominal
+        - ordinal
+      permitted:
+        - factor
+      description:
+          R: >
+            a string naming the variable for columns in the contingency table
+            (must be a factor)
+
+    - name: counts
+      title: Counts (optional)
+      type: Variable
+      suggested:
+        - continuous
+      description:
+          R: >
+            optional variable containing frequency counts for wide-format data.
+            If not provided, data are assumed to be in long format (one row per case).
+
+    - name: alpha
+      title: Significance level (α)
+      type: Number
+      min: 0.001
+      max: 0.20
+      default: 0.05
+      description:
+          R: >
+            significance level for merge decisions. Two categories merge only 
+            if their weighted chi-squared distance is not significant at this 
+            level (default 0.05).
+
+    - name: doPruning
+      title: Prune small categories before SRD
+      type: Bool
+      default: true
+      description:
+          R: >
+            TRUE (default) or FALSE, whether to remove categories whose weight
+            is too small to ever differ significantly from the mean profile.
+
+    - name: showMethodInfo
+      title: Show detailed method explanations
+      type: Bool
+      default: true
+      description:
+          R: >
+            TRUE or FALSE (default), display detailed methodological 
+            explanations for the SRD procedure.
+...

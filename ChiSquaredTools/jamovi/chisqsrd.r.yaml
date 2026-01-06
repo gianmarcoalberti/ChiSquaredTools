@@ -1,0 +1,246 @@
+---
+name: chisqsrd
+title: Simultaneous Reduction of Dimension (SRD)
+jrs: '1.1'
+items:
+    # =========================================================================
+    # ORIGINAL TABLE
+    # =========================================================================
+    - name: originalTable
+      title: Original Contingency Table
+      type: Table
+      clearWith:
+        - rows
+        - cols
+        - counts
+      columns: []
+
+    # =========================================================================
+    # SUMMARY
+    # =========================================================================
+    - name: summaryTable
+      title: SRD Summary
+      type: Table
+      refs:
+       - ortontyers1991
+       - greenacre1984
+      clearWith:
+        - rows
+        - cols
+        - counts
+        - alpha
+        - doPruning
+      columns:
+        - name: stage
+          title: 'Stage'
+          type: text
+        - name: nRows
+          title: 'Rows'
+          type: integer
+        - name: nCols
+          title: 'Columns'
+          type: integer
+        - name: df
+          title: 'df'
+          type: integer
+        - name: totalN
+          title: 'Total N'
+          type: number
+        - name: nPercent
+          title: '% N Retained'
+          type: number
+        - name: chiSquare
+          title: 'χ²'
+          type: number
+        - name: chiPercent
+          title: '% χ² Retained'
+          type: number
+
+    # =========================================================================
+    # PRUNING DETAILS
+    # =========================================================================
+    - name: pruningTable
+      title: Pruning Details
+      type: Table
+      visible: (doPruning)
+      clearWith:
+        - rows
+        - cols
+        - counts
+        - alpha
+        - doPruning
+      columns:
+        - name: dimension
+          title: 'Dimension'
+          type: text
+        - name: category
+          title: 'Category'
+          type: text
+        - name: weight
+          title: 'Weight'
+          type: number
+        - name: criticalWeight
+          title: 'Critical Weight'
+          type: number
+        - name: reason
+          title: 'Reason'
+          type: text
+
+    # =========================================================================
+    # SECTION A: ROW REDUCTION
+    # =========================================================================
+    - name: rowMergeTable
+      title: Row Merge History
+      type: Table
+      clearWith:
+        - rows
+        - cols
+        - counts
+        - alpha
+        - doPruning
+      columns:
+        - name: step
+          title: 'Step'
+          type: integer
+        - name: item1
+          title: 'Item 1'
+          type: text
+        - name: item2
+          title: 'Item 2'
+          type: text
+        - name: weightedDist
+          title: 'Weighted χ²'
+          type: number
+        - name: df
+          title: 'df'
+          type: integer
+        - name: pValue
+          title: 'p'
+          type: number
+          format: zto,pvalue
+        - name: decision
+          title: 'Decision'
+          type: text
+
+    - name: rowGroupsTable
+      title: Final Row Groups
+      type: Table
+      clearWith:
+        - rows
+        - cols
+        - counts
+        - alpha
+        - doPruning
+      columns:
+        - name: groupLabel
+          title: 'Group Label'
+          type: text
+        - name: members
+          title: 'Original Members'
+          type: text
+        - name: nMembers
+          title: 'N Members'
+          type: integer
+
+    - name: rowReducedTable
+      title: Row-Grouped Table
+      type: Table
+      clearWith:
+        - rows
+        - cols
+        - counts
+        - alpha
+        - doPruning
+      columns: []
+
+    # =========================================================================
+    # SECTION B: COLUMN REDUCTION
+    # =========================================================================
+    - name: colMergeTable
+      title: Column Merge History
+      type: Table
+      clearWith:
+        - rows
+        - cols
+        - counts
+        - alpha
+        - doPruning
+      columns:
+        - name: step
+          title: 'Step'
+          type: integer
+        - name: item1
+          title: 'Item 1'
+          type: text
+        - name: item2
+          title: 'Item 2'
+          type: text
+        - name: weightedDist
+          title: 'Weighted χ²'
+          type: number
+        - name: df
+          title: 'df'
+          type: integer
+        - name: pValue
+          title: 'p'
+          type: number
+          format: zto,pvalue
+        - name: decision
+          title: 'Decision'
+          type: text
+
+    - name: colGroupsTable
+      title: Final Column Groups
+      type: Table
+      clearWith:
+        - rows
+        - cols
+        - counts
+        - alpha
+        - doPruning
+      columns:
+        - name: groupLabel
+          title: 'Group Label'
+          type: text
+        - name: members
+          title: 'Original Members'
+          type: text
+        - name: nMembers
+          title: 'N Members'
+          type: integer
+
+    - name: colReducedTable
+      title: Column-Grouped Table
+      type: Table
+      clearWith:
+        - rows
+        - cols
+        - counts
+        - alpha
+        - doPruning
+      columns: []
+
+    # =========================================================================
+    # SECTION C: FINAL COMBINED RESULT
+    # =========================================================================
+    - name: reducedTable
+      title: Reduced Contingency Table
+      type: Table
+      clearWith:
+        - rows
+        - cols
+        - counts
+        - alpha
+        - doPruning
+      columns: []
+
+    # =========================================================================
+    # METHOD INFORMATION
+    # =========================================================================
+    - name: methodInfo
+      title: Method Details
+      type: Html
+      visible: (showMethodInfo)
+      clearWith:
+        - alpha
+...
