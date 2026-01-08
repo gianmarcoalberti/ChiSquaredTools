@@ -25,7 +25,7 @@ Description: Comprehensive toolkit for chi-squared analysis of contingency table
     generalised CMH test, log-linear homogeneity test, and trajectory plots. Features
     toggleable method explanations with rationale and usage guidance, automatic
     significance highlighting, diagnostic decision trees, and proper academic citations.
-License: GPL (>= 2)
+License: GPL (>= 3)
 Encoding: UTF-8
 LazyData: true
 Imports: jmvcore, R6, stats, ggplot2, ggdendro
