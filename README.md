@@ -1,5 +1,7 @@
 # ChiSquaredTools
 
+[![jamovi](https://img.shields.io/badge/jamovi-library-blue)](https://www.jamovi.org/library.html)
+
 A comprehensive jamovi module for chi-squared analysis of contingency tables, designed as an educational resource for undergraduate students learning categorical data analysis.
 
 ## Overview
@@ -82,30 +84,17 @@ Each facility includes:
 
 ## Installation
 
-### From jamovi Module Library
+### From jamovi Library (Recommended)
 
-*(Coming soon — pending submission to the jamovi module store)*
+1. In jamovi, go to **Modules** → **jamovi library**
+2. Search for "ChiSquaredTools"
+3. Click **Install**
 
-Once available, this will be the recommended installation method, as the jamovi library provides pre-built versions for all supported platforms (Windows, macOS Intel, macOS Apple Silicon, and Linux).
+The jamovi library provides pre-built versions for all supported platforms (Windows, macOS Intel, macOS Apple Silicon, and Linux).
 
-### From GitHub (for testing)
+### From GitHub (Development Version)
 
-**Option 1: Pre-built module**
-
-1. Download the `.jmo` file from the [Releases](../../releases) page
-2. In jamovi, go to **Modules** → **jamovi library** → **Sideload** (⋮ menu)
-3. Select the downloaded `.jmo` file
-
-> ⚠️ **Important:** The pre-built `.jmo` file was compiled on macOS (Apple Silicon) with jamovi 2.6.x. It will work on Macs running jamovi 2.6.x (Apple Silicon version). It may **not** work on:
-> - Windows or Linux systems
-> - Macs running the Intel version of jamovi
-> - Systems running jamovi 2.7.x or later
->
-> Users in these situations should use Option 2 below.
-
-**Option 2: Build from source (all platforms)**
-
-If the pre-built `.jmo` file is not compatible with your system, you can build the module from source:
+For the latest development version or to build from source:
 
 1. Ensure you have R and the `jmvtools` package installed:
    ```r
@@ -134,7 +123,7 @@ Email: gianmarco.alberti@um.edu.mt
 
 If you use this module in your research or teaching, please cite:
 
-> Alberti, G. (2025). *ChiSquaredTools: Chi-Squared Analysis Tools* [jamovi module]. Version 1.0.0. https://github.com/gianmarcoalberti/ChiSquaredTools
+> Alberti, G. (2025). *ChiSquaredTools: Chi-Squared Analysis Tools* [jamovi module]. https://github.com/gianmarcoalberti/ChiSquaredTools
 
 ## Related Resources
 
