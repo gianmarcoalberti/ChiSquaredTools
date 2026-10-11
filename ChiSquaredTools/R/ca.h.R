@@ -50,6 +50,12 @@ caOptions <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class(
             labelSize = 3.5,
             clusterMethod = "srd",
             clusterAlpha = 0.05,
+            showAttrInfluence = FALSE,
+            showAttrInfluencePlot = FALSE,
+            showAttrElimination = FALSE,
+            showAttrEliminationPlot = FALSE,
+            showReducedCAPlot = FALSE,
+            reducedPlotAttrDisplay = "fade",
             showOverdispersionPlot = FALSE,
             showMethodInfo = FALSE, ...) {
 
@@ -296,6 +302,33 @@ caOptions <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class(
                 min=0.001,
                 max=0.5,
                 default=0.05)
+            private$..showAttrInfluence <- jmvcore::OptionBool$new(
+                "showAttrInfluence",
+                showAttrInfluence,
+                default=FALSE)
+            private$..showAttrInfluencePlot <- jmvcore::OptionBool$new(
+                "showAttrInfluencePlot",
+                showAttrInfluencePlot,
+                default=FALSE)
+            private$..showAttrElimination <- jmvcore::OptionBool$new(
+                "showAttrElimination",
+                showAttrElimination,
+                default=FALSE)
+            private$..showAttrEliminationPlot <- jmvcore::OptionBool$new(
+                "showAttrEliminationPlot",
+                showAttrEliminationPlot,
+                default=FALSE)
+            private$..showReducedCAPlot <- jmvcore::OptionBool$new(
+                "showReducedCAPlot",
+                showReducedCAPlot,
+                default=FALSE)
+            private$..reducedPlotAttrDisplay <- jmvcore::OptionList$new(
+                "reducedPlotAttrDisplay",
+                reducedPlotAttrDisplay,
+                options=list(
+                    "fade",
+                    "hide"),
+                default="fade")
             private$..showOverdispersionPlot <- jmvcore::OptionBool$new(
                 "showOverdispersionPlot",
                 showOverdispersionPlot,
@@ -349,6 +382,12 @@ caOptions <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class(
             self$.addOption(private$..labelSize)
             self$.addOption(private$..clusterMethod)
             self$.addOption(private$..clusterAlpha)
+            self$.addOption(private$..showAttrInfluence)
+            self$.addOption(private$..showAttrInfluencePlot)
+            self$.addOption(private$..showAttrElimination)
+            self$.addOption(private$..showAttrEliminationPlot)
+            self$.addOption(private$..showReducedCAPlot)
+            self$.addOption(private$..reducedPlotAttrDisplay)
             self$.addOption(private$..showOverdispersionPlot)
             self$.addOption(private$..showMethodInfo)
         }),
@@ -397,6 +436,12 @@ caOptions <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class(
         labelSize = function() private$..labelSize$value,
         clusterMethod = function() private$..clusterMethod$value,
         clusterAlpha = function() private$..clusterAlpha$value,
+        showAttrInfluence = function() private$..showAttrInfluence$value,
+        showAttrInfluencePlot = function() private$..showAttrInfluencePlot$value,
+        showAttrElimination = function() private$..showAttrElimination$value,
+        showAttrEliminationPlot = function() private$..showAttrEliminationPlot$value,
+        showReducedCAPlot = function() private$..showReducedCAPlot$value,
+        reducedPlotAttrDisplay = function() private$..reducedPlotAttrDisplay$value,
         showOverdispersionPlot = function() private$..showOverdispersionPlot$value,
         showMethodInfo = function() private$..showMethodInfo$value),
     private = list(
@@ -444,6 +489,12 @@ caOptions <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class(
         ..labelSize = NA,
         ..clusterMethod = NA,
         ..clusterAlpha = NA,
+        ..showAttrInfluence = NA,
+        ..showAttrInfluencePlot = NA,
+        ..showAttrElimination = NA,
+        ..showAttrEliminationPlot = NA,
+        ..showReducedCAPlot = NA,
+        ..reducedPlotAttrDisplay = NA,
         ..showOverdispersionPlot = NA,
         ..showMethodInfo = NA)
 )
@@ -466,10 +517,15 @@ caResults <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class(
         residualMatrixTable = function() private$.items[["residualMatrixTable"]],
         srdTable = function() private$.items[["srdTable"]],
         seriatedTable = function() private$.items[["seriatedTable"]],
+        attrInfluenceTable = function() private$.items[["attrInfluenceTable"]],
+        attrEliminationTable = function() private$.items[["attrEliminationTable"]],
         screePlot = function() private$.items[["screePlot"]],
         symmetricPlot = function() private$.items[["symmetricPlot"]],
         geometricPlot = function() private$.items[["geometricPlot"]],
         contribPlot = function() private$.items[["contribPlot"]],
+        attrInfluencePlot = function() private$.items[["attrInfluencePlot"]],
+        attrEliminationPlot = function() private$.items[["attrEliminationPlot"]],
+        reducedCAPlot = function() private$.items[["reducedCAPlot"]],
         overdispersionPlot = function() private$.items[["overdispersionPlot"]],
         methodInfo = function() private$.items[["methodInfo"]]),
     private = list(),
@@ -611,7 +667,7 @@ caResults <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class(
             self$add(jmvcore::Table$new(
                 options=options,
                 name="contribCoordsTable",
-                title="Coordinates (Contribution Biplot)",
+                title="Coordinates (Contribution CA Biplot)",
                 refs="greenacre2017",
                 visible="(showContribCoords)",
                 clearWith=list(
@@ -849,6 +905,70 @@ caResults <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class(
                     "distanceMetric",
                     "residualType"),
                 columns=list()))
+            self$add(jmvcore::Table$new(
+                options=options,
+                name="attrInfluenceTable",
+                title="Attribute Influence Ranking",
+                visible="(showAttrInfluence)",
+                rows=0,
+                refs=list(
+                    "krzanowski1993"),
+                clearWith=list(
+                    "rows",
+                    "cols",
+                    "counts",
+                    "distanceMetric",
+                    "residualType"),
+                columns=list(
+                    list(
+                        `name`="rank", 
+                        `title`="Rank", 
+                        `type`="integer"),
+                    list(
+                        `name`="attribute", 
+                        `title`="Attribute", 
+                        `type`="text"),
+                    list(
+                        `name`="M2", 
+                        `title`="M\u00B2", 
+                        `type`="number", 
+                        `format`="zto"),
+                    list(
+                        `name`="importance", 
+                        `title`="Importance", 
+                        `type`="text"))))
+            self$add(jmvcore::Table$new(
+                options=options,
+                name="attrEliminationTable",
+                title="Backward Elimination Sequence",
+                visible="(showAttrElimination)",
+                rows=0,
+                refs=list(
+                    "krzanowski1993"),
+                clearWith=list(
+                    "rows",
+                    "cols",
+                    "counts",
+                    "distanceMetric",
+                    "residualType"),
+                columns=list(
+                    list(
+                        `name`="step", 
+                        `title`="Step", 
+                        `type`="integer"),
+                    list(
+                        `name`="attribute_removed", 
+                        `title`="Attribute Removed", 
+                        `type`="text"),
+                    list(
+                        `name`="M2_at_removal", 
+                        `title`="M\u00B2 at Removal", 
+                        `type`="number", 
+                        `format`="zto"),
+                    list(
+                        `name`="n_remaining", 
+                        `title`="Remaining", 
+                        `type`="integer"))))
             self$add(jmvcore::Image$new(
                 options=options,
                 name="screePlot",
@@ -857,7 +977,6 @@ caResults <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class(
                 height=400,
                 renderFun=".plotScree",
                 visible="(showScreePlot)",
-                requiresData=TRUE,
                 clearWith=list(
                     "rows",
                     "cols",
@@ -876,7 +995,6 @@ caResults <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class(
                     "beh2014",
                     "greenacre2017"),
                 visible="(showSymmetricPlot)",
-                requiresData=TRUE,
                 clearWith=list(
                     "rows",
                     "cols",
@@ -899,7 +1017,7 @@ caResults <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class(
             self$add(jmvcore::Image$new(
                 options=options,
                 name="geometricPlot",
-                title="Geometric Interpretation Plot",
+                title="Geometric Interpretation CA Plot",
                 width=650,
                 height=550,
                 renderFun=".plotGeometric",
@@ -907,7 +1025,6 @@ caResults <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class(
                     "borggroenen2005",
                     "yelland2010"),
                 visible="(showGeometricPlot)",
-                requiresData=TRUE,
                 clearWith=list(
                     "rows",
                     "cols",
@@ -926,13 +1043,12 @@ caResults <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class(
             self$add(jmvcore::Image$new(
                 options=options,
                 name="contribPlot",
-                title="Contribution Biplot",
+                title="Contribution CA Biplot",
                 width=650,
                 height=550,
                 renderFun=".plotContribBiplot",
                 refs="greenacre2017",
                 visible="(showContribPlot)",
-                requiresData=TRUE,
                 clearWith=list(
                     "rows",
                     "cols",
@@ -953,6 +1069,59 @@ caResults <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class(
                     "residualType")))
             self$add(jmvcore::Image$new(
                 options=options,
+                name="attrInfluencePlot",
+                title="Attribute Influence",
+                width=500,
+                height=400,
+                renderFun=".plotAttrInfluence",
+                visible="(showAttrInfluence && showAttrInfluencePlot)",
+                refs=list(
+                    "krzanowski1993"),
+                clearWith=list(
+                    "rows",
+                    "cols",
+                    "counts",
+                    "distanceMetric",
+                    "residualType")))
+            self$add(jmvcore::Image$new(
+                options=options,
+                name="attrEliminationPlot",
+                title="Backward Elimination Trajectory",
+                width=500,
+                height=350,
+                renderFun=".plotAttrElimination",
+                visible="(showAttrElimination && showAttrEliminationPlot)",
+                refs=list(
+                    "krzanowski1993"),
+                clearWith=list(
+                    "rows",
+                    "cols",
+                    "counts",
+                    "distanceMetric",
+                    "residualType")))
+            self$add(jmvcore::Image$new(
+                options=options,
+                name="reducedCAPlot",
+                title="Reduced-Data CA Plot",
+                width=650,
+                height=550,
+                renderFun=".plotReducedCA",
+                visible="(showAttrElimination && showReducedCAPlot)",
+                refs=list(
+                    "krzanowski1993"),
+                clearWith=list(
+                    "rows",
+                    "cols",
+                    "counts",
+                    "distanceMetric",
+                    "residualType",
+                    "dim1",
+                    "dim2",
+                    "reducedPlotAttrDisplay",
+                    "dotSize",
+                    "labelSize")))
+            self$add(jmvcore::Image$new(
+                options=options,
                 name="overdispersionPlot",
                 title="Overdispersion Diagnostic Plot",
                 width=550,
@@ -960,7 +1129,6 @@ caResults <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class(
                 renderFun=".plotOverdispersion",
                 refs="beh2018",
                 visible="(showOverdispersionPlot)",
-                requiresData=TRUE,
                 clearWith=list(
                     "rows",
                     "cols",
@@ -1016,7 +1184,7 @@ caBase <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class(
 #' data('HairEyeColor')
 #' dat <- as.data.frame(HairEyeColor)
 #'
-#' corrAnalysis::ca(
+#' ChiSquaredTools::ca(
 #'     data = dat,
 #'     rows = 'Hair',
 #'     cols = 'Eye',
@@ -1076,7 +1244,8 @@ caBase <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class(
 #'   residuals account for marginal constraints, providing more accurate
 #'   significance testing. This option is ignored when Freeman-Tukey metric is
 #'   selected.
-#' @param nAxes Number of CA dimensions to extract. Default is 2.
+#' @param nAxes Number of CA dimensions to extract (default 2). A table can
+#'   have at most min(rows, columns) − 1 dimensions; larger requests are capped.
 #' @param dim1 Which dimension to display on the horizontal axis.
 #' @param dim2 Which dimension to display on the vertical axis.
 #' @param showSymmetricPlot Display the classic symmetric CA scatterplot with
@@ -1129,6 +1298,24 @@ caBase <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class(
 #' @param clusterAlpha Significance level for distance-based clustering.
 #'   Categories with statistically indistinguishable profiles (p > alpha) are
 #'   grouped.
+#' @param showAttrInfluence Compute Procrustes-based influence measures for
+#'   each attribute (column). Higher M² indicates the attribute is more
+#'   important for preserving the row configuration. Based on Krzanowski (1993).
+#' @param showAttrInfluencePlot Display bar chart of attribute influence
+#'   measures, ranked from most to least important.
+#' @param showAttrElimination Perform backward elimination to identify an
+#'   optimal subset of attributes. At each step, the least influential attribute
+#'   is removed and all influence measures are recomputed. Warning:
+#'   computationally expensive for tables with many columns.
+#' @param showAttrEliminationPlot Display the M² trajectory during backward
+#'   elimination, with automatic elbow detection marking where further removals
+#'   begin to substantially distort the row configuration.
+#' @param showReducedCAPlot Display a symmetric CA plot using only the
+#'   attributes retained after elbow-based selection. Allows visual comparison
+#'   with the full-data CA plot.
+#' @param reducedPlotAttrDisplay How to display low-influence attributes
+#'   (those below the elbow) on the reduced-data CA plot. 'Fade' renders them
+#'   with reduced opacity; 'Hide' removes them entirely.
 #' @param showOverdispersionPlot Display a diagnostic plot for overdispersion
 #'   (Beh, Lombardo & Alberti,  2018). If points cluster to the left side of the
 #'   plot rather than  scattering randomly, overdispersion is present and
@@ -1152,10 +1339,15 @@ caBase <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class(
 #'   \code{results$residualMatrixTable} \tab \tab \tab \tab \tab a table \cr
 #'   \code{results$srdTable} \tab \tab \tab \tab \tab a table \cr
 #'   \code{results$seriatedTable} \tab \tab \tab \tab \tab a table \cr
+#'   \code{results$attrInfluenceTable} \tab \tab \tab \tab \tab a table \cr
+#'   \code{results$attrEliminationTable} \tab \tab \tab \tab \tab a table \cr
 #'   \code{results$screePlot} \tab \tab \tab \tab \tab an image \cr
 #'   \code{results$symmetricPlot} \tab \tab \tab \tab \tab an image \cr
 #'   \code{results$geometricPlot} \tab \tab \tab \tab \tab an image \cr
 #'   \code{results$contribPlot} \tab \tab \tab \tab \tab an image \cr
+#'   \code{results$attrInfluencePlot} \tab \tab \tab \tab \tab an image \cr
+#'   \code{results$attrEliminationPlot} \tab \tab \tab \tab \tab an image \cr
+#'   \code{results$reducedCAPlot} \tab \tab \tab \tab \tab an image \cr
 #'   \code{results$overdispersionPlot} \tab \tab \tab \tab \tab an image \cr
 #'   \code{results$methodInfo} \tab \tab \tab \tab \tab a html \cr
 #' }
@@ -1213,6 +1405,12 @@ ca <- function(
     labelSize = 3.5,
     clusterMethod = "srd",
     clusterAlpha = 0.05,
+    showAttrInfluence = FALSE,
+    showAttrInfluencePlot = FALSE,
+    showAttrElimination = FALSE,
+    showAttrEliminationPlot = FALSE,
+    showReducedCAPlot = FALSE,
+    reducedPlotAttrDisplay = "fade",
     showOverdispersionPlot = FALSE,
     showMethodInfo = FALSE) {
 
@@ -1277,6 +1475,12 @@ ca <- function(
         labelSize = labelSize,
         clusterMethod = clusterMethod,
         clusterAlpha = clusterAlpha,
+        showAttrInfluence = showAttrInfluence,
+        showAttrInfluencePlot = showAttrInfluencePlot,
+        showAttrElimination = showAttrElimination,
+        showAttrEliminationPlot = showAttrEliminationPlot,
+        showReducedCAPlot = showReducedCAPlot,
+        reducedPlotAttrDisplay = reducedPlotAttrDisplay,
         showOverdispersionPlot = showOverdispersionPlot,
         showMethodInfo = showMethodInfo)
 

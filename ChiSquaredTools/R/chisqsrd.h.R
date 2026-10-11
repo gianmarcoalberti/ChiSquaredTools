@@ -396,19 +396,28 @@ chisqsrdBase <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class(
 #' 
 #'
 #' @examples
+#' # Aggregated data: one row per cell plus a counts column
+#' mydata <- data.frame(
+#'   fabric = rep(c("F1", "F2", "F3", "F4"), times = 3),
+#'   form = rep(c("bowl", "jar", "plate"), each = 4),
+#'   n = c(20, 18, 2, 1,  5, 6, 25, 22,  3, 4, 2, 30)
+#' )
+#'
 #' # Basic SRD analysis
-#' chisqsrd(
+#' ChiSquaredTools::chisqsrd(
 #'     data = mydata,
 #'     rows = 'fabric',
 #'     cols = 'form',
+#'     counts = 'n',
 #'     alpha = 0.05
 #' )
 #'
 #' # With pruning disabled
-#' chisqsrd(
+#' ChiSquaredTools::chisqsrd(
 #'     data = mydata,
 #'     rows = 'fabric',
 #'     cols = 'form',
+#'     counts = 'n',
 #'     doPruning = FALSE,
 #'     alpha = 0.05
 #' )

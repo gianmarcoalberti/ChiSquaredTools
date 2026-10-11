@@ -9,6 +9,7 @@ items:
       clearWith:
         - rows
         - cols
+        - counts
       columns: []
 
     - name: expectedTable
@@ -17,6 +18,7 @@ items:
       clearWith:
         - rows
         - cols
+        - counts
       columns: []
 
     - name: tableCharacteristics
@@ -26,6 +28,7 @@ items:
       clearWith:
         - rows
         - cols
+        - counts
       columns:
         - name: characteristic
           title: 'Characteristic'
@@ -45,6 +48,7 @@ items:
       clearWith:
         - rows
         - cols
+        - counts
       columns:
         - name: diagnostic
           title: 'Diagnostic'
@@ -70,8 +74,10 @@ items:
       clearWith:
         - rows
         - cols
+        - counts
         - nPerms
         - seed
+        - mTest
       columns:
         - name: method
           title: 'Method'
@@ -94,6 +100,13 @@ items:
        - campbell2007
        - fuchs1980
        - lin2015
+       - agresti2022
+       - greenwood1996
+       - howell2011
+       - phipson2010
+       - richardson2011
+       - upton1982
+       - utts2014
 
     - name: permDistPlot
       title: Permutation Test Distribution
@@ -105,6 +118,7 @@ items:
       clearWith:
         - rows
         - cols
+        - counts
         - nPerms
         - seed
 
@@ -118,6 +132,7 @@ items:
       clearWith:
         - rows
         - cols
+        - counts
         - nPerms
         - seed
 
@@ -132,7 +147,4 @@ items:
         - n1Test
         - permTest
         - monteCarloTest
-    - name: legendNote
-      title: References
-      type: Html
 ...

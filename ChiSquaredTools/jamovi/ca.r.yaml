@@ -135,7 +135,7 @@ items:
     # COORDINATES TABLE (CONTRIBUTION BIPLOT)
     # ==========================================================================
     - name: contribCoordsTable
-      title: Coordinates (Contribution Biplot)
+      title: Coordinates (Contribution CA Biplot)
       type: Table
       refs: greenacre2017
       visible: (showContribCoords)
@@ -382,6 +382,65 @@ items:
       columns: []
 
     # ==========================================================================
+    # ATTRIBUTE ASSESSMENT TABLES
+    # ==========================================================================
+    - name: attrInfluenceTable
+      title: Attribute Influence Ranking
+      type: Table
+      visible: (showAttrInfluence)
+      rows: 0
+      refs:
+        - krzanowski1993
+      clearWith:
+        - rows
+        - cols
+        - counts
+        - distanceMetric
+        - residualType
+      columns:
+        - name: rank
+          title: Rank
+          type: integer
+        - name: attribute
+          title: Attribute
+          type: text
+        - name: M2
+          title: "M²"
+          type: number
+          format: zto
+        - name: importance
+          title: Importance
+          type: text
+
+    - name: attrEliminationTable
+      title: Backward Elimination Sequence
+      type: Table
+      visible: (showAttrElimination)
+      rows: 0
+      refs:
+        - krzanowski1993
+      clearWith:
+        - rows
+        - cols
+        - counts
+        - distanceMetric
+        - residualType
+      columns:
+        - name: step
+          title: Step
+          type: integer
+        - name: attribute_removed
+          title: Attribute Removed
+          type: text
+        - name: M2_at_removal
+          title: "M² at Removal"
+          type: number
+          format: zto
+        - name: n_remaining
+          title: Remaining
+          type: integer
+
+    # ==========================================================================
     # PLOTS
     # ==========================================================================
     
@@ -395,7 +454,6 @@ items:
       height: 400
       renderFun: .plotScree
       visible: (showScreePlot)
-      requiresData: true
       clearWith:
         - rows
         - cols
@@ -417,7 +475,6 @@ items:
         - beh2014
         - greenacre2017
       visible: (showSymmetricPlot)
-      requiresData: true
       clearWith:
         - rows
         - cols
@@ -442,7 +499,7 @@ items:
     # Geometric Interpretation Plot
     # --------------------------------------------------------------------------
     - name: geometricPlot
-      title: Geometric Interpretation Plot
+      title: Geometric Interpretation CA Plot
       type: Image
       width: 650
       height: 550
@@ -451,7 +508,6 @@ items:
         - borggroenen2005
         - yelland2010
       visible: (showGeometricPlot)
-      requiresData: true
       clearWith:
         - rows
         - cols
@@ -472,14 +528,13 @@ items:
     # Contribution Biplot
     # --------------------------------------------------------------------------
     - name: contribPlot
-      title: Contribution Biplot
+      title: Contribution CA Biplot
       type: Image
       width: 650
       height: 550
       renderFun: .plotContribBiplot
       refs: greenacre2017
       visible: (showContribPlot)
-      requiresData: true
       clearWith:
         - rows
         - cols
@@ -500,6 +555,62 @@ items:
         - residualType
 
     # --------------------------------------------------------------------------
+    # Attribute Assessment Plots
+    # --------------------------------------------------------------------------
+    - name: attrInfluencePlot
+      title: Attribute Influence
+      type: Image
+      width: 500
+      height: 400
+      renderFun: .plotAttrInfluence
+      visible: (showAttrInfluence && showAttrInfluencePlot)
+      refs:
+        - krzanowski1993
+      clearWith:
+        - rows
+        - cols
+        - counts
+        - distanceMetric
+        - residualType
+
+    - name: attrEliminationPlot
+      title: Backward Elimination Trajectory
+      type: Image
+      width: 500
+      height: 350
+      renderFun: .plotAttrElimination
+      visible: (showAttrElimination && showAttrEliminationPlot)
+      refs:
+        - krzanowski1993
+      clearWith:
+        - rows
+        - cols
+        - counts
+        - distanceMetric
+        - residualType
+
+    - name: reducedCAPlot
+      title: Reduced-Data CA Plot
+      type: Image
+      width: 650
+      height: 550
+      renderFun: .plotReducedCA
+      visible: (showAttrElimination && showReducedCAPlot)
+      refs:
+        - krzanowski1993
+      clearWith:
+        - rows
+        - cols
+        - counts
+        - distanceMetric
+        - residualType
+        - dim1
+        - dim2
+        - reducedPlotAttrDisplay
+        - dotSize
+        - labelSize
+
+    # --------------------------------------------------------------------------
     # Overdispersion Diagnostic Plot
     # --------------------------------------------------------------------------
     - name: overdispersionPlot
@@ -510,7 +621,6 @@ items:
       renderFun: .plotOverdispersion
       refs: beh2018
       visible: (showOverdispersionPlot)
-      requiresData: true
       clearWith:
         - rows
         - cols

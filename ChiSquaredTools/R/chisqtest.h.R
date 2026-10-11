@@ -139,8 +139,7 @@ chisqtestResults <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class(
         testResults = function() private$.items[["testResults"]],
         permDistPlot = function() private$.items[["permDistPlot"]],
         mcDistPlot = function() private$.items[["mcDistPlot"]],
-        methodInfo = function() private$.items[["methodInfo"]],
-        legendNote = function() private$.items[["legendNote"]]),
+        methodInfo = function() private$.items[["methodInfo"]]),
     private = list(),
     public=list(
         initialize=function(options) {
@@ -154,7 +153,8 @@ chisqtestResults <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class(
                 title="Observed Contingency Table",
                 clearWith=list(
                     "rows",
-                    "cols"),
+                    "cols",
+                    "counts"),
                 columns=list()))
             self$add(jmvcore::Table$new(
                 options=options,
@@ -162,7 +162,8 @@ chisqtestResults <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class(
                 title="Expected Frequencies",
                 clearWith=list(
                     "rows",
-                    "cols"),
+                    "cols",
+                    "counts"),
                 columns=list()))
             self$add(jmvcore::Table$new(
                 options=options,
@@ -171,7 +172,8 @@ chisqtestResults <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class(
                 rows=0,
                 clearWith=list(
                     "rows",
-                    "cols"),
+                    "cols",
+                    "counts"),
                 columns=list(
                     list(
                         `name`="characteristic", 
@@ -193,7 +195,8 @@ chisqtestResults <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class(
                 rows=0,
                 clearWith=list(
                     "rows",
-                    "cols"),
+                    "cols",
+                    "counts"),
                 columns=list(
                     list(
                         `name`="diagnostic", 
@@ -223,8 +226,10 @@ chisqtestResults <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class(
                 clearWith=list(
                     "rows",
                     "cols",
+                    "counts",
                     "nPerms",
-                    "seed"),
+                    "seed",
+                    "mTest"),
                 columns=list(
                     list(
                         `name`="method", 
@@ -251,7 +256,14 @@ chisqtestResults <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class(
                     "alberti2024",
                     "campbell2007",
                     "fuchs1980",
-                    "lin2015")))
+                    "lin2015",
+                    "agresti2022",
+                    "greenwood1996",
+                    "howell2011",
+                    "phipson2010",
+                    "richardson2011",
+                    "upton1982",
+                    "utts2014")))
             self$add(jmvcore::Image$new(
                 options=options,
                 name="permDistPlot",
@@ -263,6 +275,7 @@ chisqtestResults <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class(
                 clearWith=list(
                     "rows",
                     "cols",
+                    "counts",
                     "nPerms",
                     "seed")))
             self$add(jmvcore::Image$new(
@@ -276,6 +289,7 @@ chisqtestResults <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class(
                 clearWith=list(
                     "rows",
                     "cols",
+                    "counts",
                     "nPerms",
                     "seed")))
             self$add(jmvcore::Html$new(
@@ -289,11 +303,7 @@ chisqtestResults <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class(
                     "traditionalTest",
                     "n1Test",
                     "permTest",
-                    "monteCarloTest")))
-            self$add(jmvcore::Html$new(
-                options=options,
-                name="legendNote",
-                title="References"))}))
+                    "monteCarloTest")))}))
 
 chisqtestBase <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class(
     "chisqtestBase",
@@ -382,7 +392,6 @@ chisqtestBase <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class(
 #'   \code{results$permDistPlot} \tab \tab \tab \tab \tab an image \cr
 #'   \code{results$mcDistPlot} \tab \tab \tab \tab \tab an image \cr
 #'   \code{results$methodInfo} \tab \tab \tab \tab \tab a html \cr
-#'   \code{results$legendNote} \tab \tab \tab \tab \tab a html \cr
 #' }
 #'
 #' Tables can be converted to data frames with \code{asDF} or \code{\link{as.data.frame}}. For example:

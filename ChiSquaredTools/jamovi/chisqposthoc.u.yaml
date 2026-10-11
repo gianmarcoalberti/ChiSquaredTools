@@ -29,95 +29,93 @@ children:
             name: counts
             maxItemCount: 1
             isTarget: true
-  - type: LayoutBox
-    margin: large
+  - type: CollapseBox
+    label: Symmetric Measures
+    collapsed: false
+    stretchFactor: 1
     children:
-      - type: Label
-        label: Symmetric Measures
-        children:
-          - type: CheckBox
-            name: stdres
-          - type: CheckBox
-            name: momcorrstdres
-          - type: CheckBox
-            name: adjstdres
-          - type: CheckBox
-            name: quetelet
-          - type: CheckBox
-            name: ij
-          - type: CheckBox
-            name: bsOutlier
-          - type: CheckBox
-            name: pem
-          - type: CheckBox
-            name: medpolish
-          - type: CheckBox
-            name: adjmedpolish
-  - type: LayoutBox
-    margin: large
+      - type: CheckBox
+        name: stdres
+      - type: CheckBox
+        name: momcorrstdres
+      - type: CheckBox
+        name: adjstdres
+      - type: CheckBox
+        name: quetelet
+      - type: CheckBox
+        name: ij
+      - type: CheckBox
+        name: bsOutlier
+      - type: CheckBox
+        name: pem
+      - type: CheckBox
+        name: medpolish
+      - type: CheckBox
+        name: adjmedpolish
+  - type: CollapseBox
+    label: Directional Measures
+    collapsed: false
+    stretchFactor: 1
     children:
-      - type: Label
-        label: Directional Measures
-        children:
-          - type: CheckBox
-            name: gkres
-          - type: CheckBox
-            name: dep
-  - type: LayoutBox
-    margin: large
+      - type: CheckBox
+        name: gkres
+      - type: CheckBox
+        name: dep
+  - type: CollapseBox
+    label: Adjustment for Multiple Comparisons
+    collapsed: true
+    stretchFactor: 1
     children:
-      - type: Label
-        label: Adjustment for Multiple Comparisons
-        children:
-          - type: CheckBox
-            name: sidakCorrection
-  - type: LayoutBox
-    margin: large
+      - type: CheckBox
+        name: sidakCorrection
+  - type: CollapseBox
+    label: Backwards-Stepping Options
+    collapsed: true
+    stretchFactor: 1
     children:
-      - type: Label
-        label: Backwards-Stepping Options
-        children:
-          - type: TextBox
-            name: bsKmax
-            format: number
-            enable: (bsOutlier)
-  - type: LayoutBox
-    margin: large
+      - type: TextBox
+        name: bsKmax
+        format: number
+        enable: (bsOutlier)
+  - type: CollapseBox
+    label: PEM Options
+    collapsed: true
+    stretchFactor: 1
     children:
-      - type: Label
-        label: PEM Options
-        children:
-          - type: TextBox
-            name: confLevel
-            format: number
-            suffix: '%'
-          - type: TextBox
-            name: bootstrapReps
-            format: number
-          - type: TextBox
-            name: seed
-            format: number
-          - type: CheckBox
-            name: showPemPlot
-          - type: ComboBox
-            name: pemPlotFilter
-  - type: LayoutBox
-    margin: large
+      - type: TextBox
+        name: confLevel
+        format: number
+        suffix: '%'
+        enable: (pem)
+      - type: TextBox
+        name: bootstrapReps
+        format: number
+        enable: (pem)
+      - type: TextBox
+        name: seed
+        format: number
+        enable: (pem)
+      - type: CheckBox
+        name: showPemPlot
+        enable: (pem)
+      - type: ComboBox
+        name: pemPlotFilter
+        enable: (pem && showPemPlot)
+  - type: CollapseBox
+    label: DEP Options
+    collapsed: true
+    stretchFactor: 1
     children:
-      - type: Label
-        label: DEP Options
-        children:
-          - type: LevelSelector
-            name: depOutcome
-            enable: (dep)
-          - type: CheckBox
-            name: showDepPlot
-            enable: (dep)
-  - type: LayoutBox
-    margin: large
+      - type: LevelSelector
+        name: depOutcome
+        enable: (dep)
+      - type: CheckBox
+        name: showDepPlot
+        enable: (dep)
+  - type: CollapseBox
+    label: Display Options
+    collapsed: true
+    stretchFactor: 1
     children:
-      - type: Label
-        label: Display Options
-        children:
-          - type: CheckBox
-            name: showMethodInfo
+      - type: CheckBox
+        name: showMethodInfo

@@ -1,7 +1,5 @@
 # This file is a generated template, your changes will not be overwritten
 
-#' @importFrom stats chisq.test mantelhaen.test pchisq xtabs as.formula
-#' @importFrom ggplot2 ggplot aes geom_point geom_errorbarh geom_hline geom_vline geom_segment geom_rect geom_text labs theme_minimal theme element_text element_blank scale_x_continuous scale_y_discrete coord_cartesian annotate
 #' @export
 chisqstrata2x2Class <- R6::R6Class(
   "chisqstrata2x2Class",
@@ -193,7 +191,7 @@ chisqstrata2x2Class <- R6::R6Class(
       # ═══════════════════════════════════════════════════════════════════════════
       
       homogTable <- self$results$homogeneityTable
-      homogTable$addRow(rowKey = 1, values = list(test = "Mantel-Haenszel"))
+      homogTable$addRow(rowKey = 1, values = list(test = "Woolf"))
       homogTable$addRow(rowKey = 2, values = list(test = "Breslow-Day-Tarone"))
       
       # ═══════════════════════════════════════════════════════════════════════════
@@ -451,8 +449,8 @@ chisqstrata2x2Class <- R6::R6Class(
         commonCI <- commonCI_raw
       }
       
-      # Mantel-Haenszel test for homogeneity
-      mhResult <- private$.mhHomogeneityTest(listOfTables, rowRefPos, colRefPos)
+      # Woolf test for homogeneity (inverse-variance weighted log ORs)
+      mhResult <- private$.woolfHomogeneityTest(listOfTables, rowRefPos, colRefPos)
       
       # Breslow-Day-Tarone test
       bdtResult <- private$.breslowDayTaroneTest(array3D)
@@ -512,15 +510,12 @@ chisqstrata2x2Class <- R6::R6Class(
     
     .buildStratifiedArray = function(data, rowVar, colVar, strataVar) {
       
-      if (is.null(self$options$counts)) {
-        # Long format: one row per observation
-        fullTable <- table(data[[rowVar]], data[[colVar]], data[[strataVar]])
-      } else {
-        # Wide format: aggregated data with counts variable
-        countsVar <- self$options$counts
-        formula_str <- paste0(countsVar, " ~ ", rowVar, " + ", colVar, " + ", strataVar)
-        fullTable <- stats::xtabs(stats::as.formula(formula_str), data = data)
-      }
+      # Shared helper (utils.R): safe with any variable name, and stores
+      # counts as doubles so that mantelhaen.test() cannot overflow with
+      # large samples (integer products of margins returned NA before)
+      fullTable <- .ctBuildTable(data, c(rowVar, colVar, strataVar),
+                                 self$options$counts)
+      .ctRejectEmptyMargins(fullTable, rowVar, colVar)
       
       # Ensure it is a proper 3D array
       fullTable <- as.array(fullTable)
@@ -597,31 +592,32 @@ chisqstrata2x2Class <- R6::R6Class(
       
       # Format OR value
       orFormatted <- sprintf("%.2f", or)
+      rowVar <- self$options$rows
+      colVar <- self$options$cols
       
-      # Build plain text interpretation
-      if (or >= 1) {
-        if (or == 1) {
-          annotation <- paste0(
-            exposureName, " and ", referenceName, 
-            " have similar odds of being ", outcomeName, "."
-          )
-        } else {
-          annotation <- paste0(
-            "Interpretation (OR = ", orFormatted, "): ",
-            exposureName, " have ", orFormatted, 
-            " times the odds of being ", outcomeName,
-            " compared to ", referenceName, ". ",
-            "See tables below for confidence intervals and significance tests."
-          )
-        }
+      # Variables are named explicitly, so the sentence reads correctly
+      # whatever the level labels are (e.g. 'no'/'yes')
+      outcomeTxt <- paste0("the odds of ", rowVar, " = '", outcomeName, "'")
+      groupA <- paste0(colVar, " = '", exposureName, "'")
+      groupB <- paste0(colVar, " = '", referenceName, "'")
+      
+      if (or == 1) {
+        annotation <- paste0(
+          "Interpretation (OR = ", orFormatted, "): ", outcomeTxt,
+          " are the same for ", groupA, " and ", groupB, "."
+        )
+      } else if (or > 1) {
+        annotation <- paste0(
+          "Interpretation (OR = ", orFormatted, "): ", outcomeTxt,
+          " are ", orFormatted, " times as high for ", groupA, " as for ", groupB, ". ",
+          "See tables below for confidence intervals and significance tests."
+        )
       } else {
         pctLower <- sprintf("%.0f", (1 - or) * 100)
         annotation <- paste0(
-          "Interpretation (OR = ", orFormatted, "): ",
-          exposureName, " have ", orFormatted, 
-          " times the odds of being ", outcomeName,
-          " compared to ", referenceName, 
-          " (i.e., ", pctLower, "% lower odds). ",
+          "Interpretation (OR = ", orFormatted, "): ", outcomeTxt,
+          " are ", orFormatted, " times as high (", pctLower, "% lower) for ",
+          groupA, " as for ", groupB, ". ",
           "See tables below for confidence intervals and significance tests."
         )
       }
@@ -630,10 +626,10 @@ chisqstrata2x2Class <- R6::R6Class(
     },
     
     # ═══════════════════════════════════════════════════════════════════════════
-    # Helper: Mantel-Haenszel test for homogeneity of odds ratios
+    # Helper: Woolf (1955) test for homogeneity of odds ratios
     # ═══════════════════════════════════════════════════════════════════════════
     
-    .mhHomogeneityTest = function(listOfTables, rowRefPos, colRefPos) {
+    .woolfHomogeneityTest = function(listOfTables, rowRefPos, colRefPos) {
       
       # Function to calculate MH weights
       mhCalculateWeights <- function(tbl) {
@@ -1019,16 +1015,22 @@ chisqstrata2x2Class <- R6::R6Class(
       ))
       
       # Add conditional footnote based on significance
-      cmhSig <- cmhTest$p.value < 0.05
-      if (cmhSig) {
+      # The CMH test assesses whether the common (Mantel-Haenszel) odds
+      # ratio equals 1; it is most powerful when stratum ORs agree in direction
+      cmhSig <- isTRUE(cmhTest$p.value < 0.05)
+      if (is.na(cmhTest$p.value)) {
+        cmhFootnote <- "The CMH test could not be computed for these data."
+      } else if (cmhSig) {
         cmhFootnote <- paste0(
           "The CMH test is significant, suggesting conditional dependence: ",
-          "the odds ratio in at least one partial table is significantly different from 1."
+          "the common odds ratio differs significantly from 1. ",
+          "See the homogeneity tests to judge whether a common odds ratio is a fair summary."
         )
       } else {
         cmhFootnote <- paste0(
-          "The CMH test is not significant, suggesting conditional independence: ",
-          "the odds ratios across all partial tables are not significantly different from 1."
+          "The CMH test is not significant: no evidence that the common odds ratio ",
+          "differs from 1. Stratum odds ratios pointing in opposite directions can cancel ",
+          "out, so check the homogeneity tests as well."
         )
       }
       table$setNote('cmhInterpretation', cmhFootnote)
@@ -1042,9 +1044,9 @@ chisqstrata2x2Class <- R6::R6Class(
       
       table <- self$results$homogeneityTable
       
-      # Update Mantel-Haenszel homogeneity test row
+      # Update Woolf homogeneity test row
       table$setRow(rowKey = 1, values = list(
-        test = "Mantel-Haenszel",
+        test = "Woolf",
         statistic = mhResult$statistic,
         df = mhResult$df,
         pvalue = mhResult$pvalue
@@ -1318,8 +1320,8 @@ chisqstrata2x2Class <- R6::R6Class(
         <h3 style='color: #2874A6;'>Tests for Homogeneity of Odds Ratios</h3>
         <p>Two tests are provided to assess whether the stratum-specific odds ratios are homogeneous:</p>
         
-        <p><strong>Mantel-Haenszel Test:</strong> Tests whether the weighted log odds ratios are 
-        consistent across strata. Uses inverse-variance weights to assess departures from homogeneity.</p>
+        <p><strong>Woolf Test:</strong> Tests whether the log odds ratios are consistent across 
+        strata, using inverse-variance weights to assess departures from homogeneity (Woolf, 1955).</p>
         
         <p><strong>Breslow-Day-Tarone Test:</strong> A more commonly used test that compares observed 
         cell frequencies to those expected under a common odds ratio. The Tarone correction improves 

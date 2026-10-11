@@ -40,7 +40,7 @@ items:
 
     # 2. CHI-SQUARE-MAXIMISING TABLE
     - name: chisqMaxTable
-      title: Chi-Square-Maximising Table
+      title: Chi-Squared-Maximising Table
       type: Table
       visible: (showChisqMax)
       clearWith:
@@ -76,6 +76,31 @@ items:
         - bishop2007
         - goodman1979
         - reynolds1977
+        - bergsma2013
+        - blaikie2003
+        - bonett2007
+        - bruner1976
+        - buchanan1974
+        - cole1949
+        - cramer1946
+        - cureton1959
+        - davenport1991
+        - ferguson2009
+        - goodman1954
+        - goodman1972
+        - kendall1961
+        - kvalseth2018a
+        - kvalseth2018b
+        - liu1980
+        - mueller1961
+        - rasch2011
+        - ratliff1982
+        - smithson2003
+        - voneye2003
+        - warrens2008
+        - yule1912
+        - zysno1997
+        - cohen1988
       clearWith:
         - rows
         - cols
@@ -233,6 +258,8 @@ items:
         - phi
         - phiSigned
         - phiCorrected
+        - coleC7
+        - zysnoPhi
         - contingencyC
         - cAdjusted
         - cCorrected
@@ -246,9 +273,10 @@ items:
         - sakoda
         - sakodaCorrected
         - sakodaLocal
-        - yulesQ
-        - yulesY
-        - oddsRatio
+        - marginFree
+        - gkLambda
+        - gkLambdaCorrected
+        - gkTau
       columns:
         - name: measure
           title: 'Measure'
@@ -276,6 +304,8 @@ items:
         - phi
         - phiSigned
         - phiCorrected
+        - coleC7
+        - zysnoPhi
         - contingencyC
         - cAdjusted
         - cCorrected
@@ -289,9 +319,7 @@ items:
         - sakoda
         - sakodaCorrected
         - sakodaLocal
-        - yulesQ
-        - yulesY
-        - oddsRatio
+        - marginFree
         - gkLambda
         - gkLambdaCorrected
         - gkTau

@@ -19,7 +19,7 @@ description:
         - Stratum-specific odds ratios with 95% confidence intervals
         - Chi-squared tests for each partial table and the marginal table
         - Cochran-Mantel-Haenszel (CMH) test for conditional independence
-        - Mantel-Haenszel (MH) test for homogeneity of odds ratios
+        - Woolf's test for homogeneity of odds ratios
         - Breslow-Day-Tarone (BDT) test for homogeneity of odds ratios
         
         The analysis provides automated interpretation based on four diagnostic
@@ -44,7 +44,7 @@ description:
                           61, 25, 75, 139, 94, 106)
             )
             
-            ChiSquaredTools::chisqstrata(
+            ChiSquaredTools::chisqstrata2x2(
                 data = titanic_df,
                 rows = 'Survival',
                 cols = 'Gender',
@@ -126,7 +126,7 @@ options:
           R: The column level selected as the category of interest.
 
     - name: showForestPlot
-      title: Display forest plot of odds ratios
+      title: Forest plot of odds ratios
       type: Bool
       default: true
       description:
@@ -146,7 +146,7 @@ options:
             plot visualisation and ordered axis labels.
 
     - name: showTrajectoryPlot
-      title: Display OR trajectory plot (if strata ordered)
+      title: OR trajectory plot (ordered strata only)
       type: Bool
       default: true
       description:
@@ -155,7 +155,7 @@ options:
             plot when the stratifying variable is marked as ordered.
 
     - name: showMethodInfo
-      title: Show detailed method explanations
+      title: Method explanations
       type: Bool
       default: false
       description:

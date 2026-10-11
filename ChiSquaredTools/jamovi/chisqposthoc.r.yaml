@@ -32,6 +32,7 @@ items:
       clearWith:
         - rows
         - cols
+        - counts
         - sidakCorrection
         - stdres
       columns: []
@@ -45,6 +46,7 @@ items:
       clearWith:
         - rows
         - cols
+        - counts
         - sidakCorrection
         - momcorrstdres
       columns: []
@@ -58,6 +60,7 @@ items:
       clearWith:
         - rows
         - cols
+        - counts
         - sidakCorrection
         - adjstdres
       columns: []
@@ -71,6 +74,7 @@ items:
       clearWith:
         - rows
         - cols
+        - counts
         - quetelet
       columns: []
       refs:
@@ -84,6 +88,7 @@ items:
       clearWith:
         - rows
         - cols
+        - counts
         - ij
       columns: []
       refs:
@@ -97,6 +102,7 @@ items:
       clearWith:
         - rows
         - cols
+        - counts
         - bsKmax
       columns: []
       refs:
@@ -109,6 +115,7 @@ items:
       clearWith:
         - rows
         - cols
+        - counts
         - bsKmax
       columns:
         - name: rank
@@ -134,8 +141,10 @@ items:
       clearWith:
         - rows
         - cols
+        - counts
         - confLevel
         - bootstrapReps
+        - seed
       columns: []
       refs:
        - cibois1993
@@ -150,10 +159,10 @@ items:
       width: 700
       height: 500
       renderFun: .pemPlot
-      requiresData: true
       clearWith:
         - rows
         - cols
+        - counts
         - confLevel
         - bootstrapReps
         - seed
@@ -166,6 +175,7 @@ items:
       clearWith:
         - rows
         - cols
+        - counts
         - medpolish
       columns: []
       refs:
@@ -179,6 +189,7 @@ items:
       clearWith:
         - rows
         - cols
+        - counts
         - adjmedpolish
       columns: []
       refs:
@@ -191,6 +202,7 @@ items:
       clearWith:
         - rows
         - cols
+        - counts
       columns: []
       refs:
       - kroonenberglombardo1999
@@ -202,6 +214,7 @@ items:
       clearWith:
         - rows
         - cols
+        - counts
       columns: []
       refs:
       - kroonenberglombardo1999
@@ -213,6 +226,7 @@ items:
       clearWith:
         - rows
         - cols
+        - counts
         - depOutcome
       columns:
         - name: rowCat
@@ -243,10 +257,10 @@ items:
       width: 700
       height: 500
       renderFun: .depPlot
-      requiresData: true
       clearWith:
         - rows
         - cols
+        - counts
         - depOutcome
 
     - name: methodInfo

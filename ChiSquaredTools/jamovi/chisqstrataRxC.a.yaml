@@ -116,8 +116,19 @@ options:
             number of bootstrap replicates for computing confidence intervals
             of V corrected (default: 1000)
 
+    - name: seed
+      title: Random Seed
+      type: Integer
+      min: 1
+      max: 999999
+      default: 123
+      description:
+          R: >
+            random seed for the bootstrap, so that confidence intervals are
+            reproducible (default: 123)
+
     - name: showForestPlot
-      title: Display forest plot of V corrected
+      title: Forest plot of V corrected
       type: Bool
       default: true
       description:
@@ -127,7 +138,7 @@ options:
             the weighted average.
 
     - name: showDiagnosticTree
-      title: Display diagnostic decision tree
+      title: Diagnostic decision tree
       type: Bool
       default: true
       description:
@@ -146,7 +157,7 @@ options:
             plot visualisation.
 
     - name: showTrajectoryPlot
-      title: Display V corrected trajectory plot (if strata ordered)
+      title: V corrected trajectory plot (ordered strata only)
       type: Bool
       default: true
       description:
@@ -155,7 +166,7 @@ options:
             plot when the stratifying variable is marked as ordered.
 
     - name: showMethodInfo
-      title: Show detailed method explanations
+      title: Method explanations
       type: Bool
       default: false
       description:

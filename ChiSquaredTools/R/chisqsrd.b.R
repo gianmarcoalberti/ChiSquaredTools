@@ -170,15 +170,11 @@ chisqsrdClass <- R6::R6Class(
       if (!is.factor(data[[colVar]]))
         data[[colVar]] <- as.factor(data[[colVar]])
       
-      # Build contingency table
-      if (is.null(self$options$counts)) {
-        contingency_table <- table(data[[rowVar]], data[[colVar]])
-      } else {
-        countsVar <- self$options$counts
-        formula_str <- paste0("`", countsVar, "` ~ `", rowVar, "` + `", colVar, "`")
-        contingency_table <- stats::xtabs(stats::as.formula(formula_str), data = data)
-        contingency_table <- as.table(contingency_table)
-      }
+      # Build contingency table safely (shared helper in utils.R):
+      # no formula parsing of variable names, double storage, all levels kept
+      contingency_table <- .ctBuildTable(data, c(rowVar, colVar), self$options$counts)
+      .ctRejectTooFewLevels(contingency_table, rowVar, colVar)
+      .ctRejectEmptyMargins(contingency_table, rowVar, colVar)
       
       # Convert to matrix for processing
       orig_matrix <- as.matrix(contingency_table)

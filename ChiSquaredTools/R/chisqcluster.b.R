@@ -99,17 +99,11 @@ chisqclusterClass <- R6::R6Class(
         data[[colVar]] <- as.factor(data[[colVar]])
       }
       
-      # Build contingency table based on data format
-      if (is.null(self$options$counts)) {
-        # Long format: one row per observation
-        contingency_table <- table(data[[rowVar]], data[[colVar]])
-      } else {
-        # Wide format: aggregated data with counts variable
-        countsVar <- self$options$counts
-        formula_str <- paste0("`", countsVar, "` ~ `", rowVar, "` + `", colVar, "`")
-        contingency_table <- stats::xtabs(stats::as.formula(formula_str), data = data)
-        contingency_table <- as.table(contingency_table)
-      }
+      # Build contingency table safely (shared helper in utils.R):
+      # no formula parsing of variable names, double storage, all levels kept
+      contingency_table <- .ctBuildTable(data, c(rowVar, colVar), self$options$counts)
+      .ctRejectTooFewLevels(contingency_table, rowVar, colVar)
+      .ctRejectEmptyMargins(contingency_table, rowVar, colVar)
       
       # Always populate the crosstab
       private$.populateCrosstab(contingency_table)
@@ -119,6 +113,8 @@ chisqclusterClass <- R6::R6Class(
         row_result <- private$.clusterContingency(contingency_table, dim = "row")
         private$.rowClusterResult <- row_result
         private$.populateRowResults(row_result)
+        # Save only what the dendrogram draws (needed on export)
+        self$results$rowDendro$setState(private$.dendroState(row_result))
       }, error = function(e) {
         self$results$rowClusterTable$setNote('clusterError', 
                                              paste0("Row clustering error: ", e$message), init = FALSE)
@@ -129,6 +125,8 @@ chisqclusterClass <- R6::R6Class(
         col_result <- private$.clusterContingency(contingency_table, dim = "col")
         private$.colClusterResult <- col_result
         private$.populateColResults(col_result)
+        # Save only what the dendrogram draws (needed on export)
+        self$results$colDendro$setState(private$.dendroState(col_result))
       }, error = function(e) {
         self$results$colClusterTable$setNote('clusterError', 
                                              paste0("Column clustering error: ", e$message), init = FALSE)
@@ -167,152 +165,9 @@ chisqclusterClass <- R6::R6Class(
     },
     
     .getCriticalChiSquare = function(nrow, ncol) {
-      # Critical values from Pearson & Hartley (1972), Biometrika Tables for
-      
-      # Statisticians, Volume 2, Table 51: Upper percentage points C(α) of
-      
-      # largest root, at α = 0.05.
-      #
-      # For an I×J contingency table:
-      #   p = min(I-1, J-1)
-      #   ν (nu) = max(I-1, J-1)
-      #
-      # The matrix below is indexed as: critical_values[nu, p]
-      # where nu ranges from 2 to 100 (rows) and p ranges from 2 to 10 (columns).
-      #
-      # Values for nu > 100 or p > 10 are not available in the published tables.
-      
-      # Determine p and nu from table dimensions
-      p <- min(nrow - 1, ncol - 1)
-      nu <- max(nrow - 1, ncol - 1)
-      
-      
-      # Check bounds
-      
-      if (p < 2 || nu < 2) {
-        stop(paste0("Table too small (", nrow, "×", ncol, 
-                    "). Clustering requires at least a 3×3 table."))
-      }
-      
-      if (p > 10) {
-        stop(paste0("Table dimensions (", nrow, "×", ncol, 
-                    ") exceed available critical values. The smaller dimension must be ≤ 11 ",
-                    "(i.e., min(rows, columns) ≤ 11). Critical values from Pearson & Hartley (1972, Table 51) ",
-                    "are only tabulated for p = min(I−1, J−1) ≤ 10."))
-      }
-      
-      if (nu > 100) {
-        stop(paste0("Table dimensions (", nrow, "×", ncol, 
-                    ") exceed available critical values. The larger dimension must be ≤ 101 ",
-                    "(i.e., max(rows, columns) ≤ 101). Critical values from Pearson & Hartley (1972, Table 51) ",
-                    "are only tabulated for ν = max(I−1, J−1) ≤ 100."))
-      }
-      
-      # Critical values matrix: rows = nu (2:100), columns = p (2:10)
-      # Index as: cv[nu, p] directly (nu and p are 1-based indices matching their values)
-      # We'll use a sparse approach: create a lookup list keyed by "nu,p"
-      
-      cv <- list(
-        # p = 2
-        "2,2" = 8.594, "3,2" = 10.74, "4,2" = 12.68, "5,2" = 14.49, 
-        "6,2" = 16.21, "7,2" = 17.88, "8,2" = 19.49, "9,2" = 21.06,
-        "10,2" = 22.61, "11,2" = 24.12, "12,2" = 25.61,
-        "14,2" = 28.53, "19,2" = 35.59, "24,2" = 42.07, "29,2" = 48.27,
-        "39,2" = 60.02, "49,2" = 75.46, "59,2" = 87.66, "69,2" = 99.70,
-        "79,2" = 111.6, "89,2" = 123.4, "99,2" = 135.0,
-        
-        # p = 3
-        "3,3" = 13.11, "4,3" = 15.24, "5,3" = 17.21, "6,3" = 19.09,
-        "7,3" = 20.88, "8,3" = 22.62, "9,3" = 24.31, "10,3" = 25.96,
-        "11,3" = 27.58, "12,3" = 29.17,
-        "14,3" = 32.27, "19,3" = 39.52, "24,3" = 46.27, "29,3" = 52.80,
-        "39,3" = 68.50, "49,3" = 81.44, "59,3" = 94.09, "69,3" = 106.5,
-        "79,3" = 118.8, "89,3" = 130.9, "99,3" = 143.0,
-        
-        # p = 4
-        "4,4" = 17.52, "5,4" = 19.63, "6,4" = 21.62, "7,4" = 23.53,
-        "8,4" = 25.37, "9,4" = 27.15, "10,4" = 28.90, "11,4" = 30.60,
-        "12,4" = 32.27,
-        "14,4" = 35.52, "19,4" = 43.08, "24,4" = 50.27, "29,4" = 57.24,
-        "39,4" = 76.18, "49,4" = 89.73, "59,4" = 102.9, "69,4" = 115.9,
-        "79,4" = 128.6, "89,4" = 141.2, "99,4" = 153.6,
-        
-        # p = 5
-        "5,5" = 21.85, "6,5" = 23.95, "7,5" = 25.96, "8,5" = 27.88,
-        "9,5" = 29.75, "10,5" = 31.57, "11,5" = 33.35, "12,5" = 35.09,
-        "14,5" = 38.57, "19,5" = 46.44, "24,5" = 53.95, "29,5" = 61.29,
-        "39,5" = 83.29, "49,5" = 102.9, "59,5" = 117.0, "69,5" = 130.9,
-        "79,5" = 144.4, "89,5" = 157.8, "99,5" = 170.9,
-        
-        # p = 6
-        "6,6" = 26.14, "7,6" = 28.23, "8,6" = 30.24, "9,6" = 32.18,
-        "10,6" = 34.08, "11,6" = 35.93, "12,6" = 37.73,
-        "14,6" = 41.46, "19,6" = 49.64, "24,6" = 57.46, "29,6" = 65.12,
-        "39,6" = 88.29, "49,6" = 102.9, "59,6" = 117.0, "69,6" = 130.9,
-        "79,6" = 144.4, "89,6" = 157.8, "99,6" = 170.9,
-        
-        # p = 7
-        "7,7" = 30.40, "8,7" = 32.48, "9,7" = 34.50, "10,7" = 36.45,
-        "11,7" = 38.36, "12,7" = 40.22,
-        "14,7" = 44.22, "19,7" = 52.70, "24,7" = 60.83, "29,7" = 68.77,
-        "39,7" = 91.57, "49,7" = 106.4, "59,7" = 120.8, "69,7" = 134.8,
-        "79,7" = 148.6, "89,7" = 162.1, "99,7" = 175.4,
-        
-        # p = 8
-        "8,8" = 34.63, "9,8" = 36.70, "10,8" = 38.72, "11,8" = 40.69,
-        "12,8" = 42.60,
-        "14,8" = 46.86, "19,8" = 55.62, "24,8" = 64.04, "29,8" = 72.26,
-        "39,8" = 96.11, "49,8" = 111.2, "59,8" = 125.8, "69,8" = 140.1,
-        "79,8" = 154.0, "89,8" = 167.8, "99,8" = 181.3,
-        
-        # p = 9
-        "9,9" = 38.84, "10,9" = 40.91, "11,9" = 42.93, "12,9" = 44.90,
-        "14,9" = 49.40, "19,9" = 58.43, "24,9" = 67.11, "29,9" = 75.60,
-        "39,9" = 99.43, "49,9" = 114.8, "59,9" = 129.6, "69,9" = 144.1,
-        "79,9" = 158.2, "89,9" = 172.1, "99,9" = 185.8,
-        
-        # p = 10
-        "10,10" = 43.04, "11,10" = 45.10, "12,10" = 47.12,
-        "14,10" = 51.86, "19,10" = 61.14, "24,10" = 70.07, "29,10" = 78.81,
-        "39,10" = 102.6, "49,10" = 118.2, "59,10" = 133.3, "69,10" = 147.9,
-        "79,10" = 162.2, "89,10" = 176.3, "99,10" = 190.1
-      )
-      
-      # Direct lookup
-      key <- paste0(nu, ",", p)
-      if (key %in% names(cv)) {
-        return(cv[[key]])
-      }
-      
-      # If exact value not in table, interpolate between available nu values
-      # Find bracketing nu values for this p
-      available_nu <- as.integer(sapply(strsplit(names(cv)[grepl(paste0(",", p, "$"), names(cv))], ","), `[`, 1))
-      available_nu <- sort(available_nu)
-      
-      if (length(available_nu) == 0) {
-        stop(paste0("No critical values available for p = ", p))
-      }
-      
-      # Find bracketing values
-      lower_nu <- max(available_nu[available_nu <= nu], na.rm = TRUE)
-      upper_nu <- min(available_nu[available_nu >= nu], na.rm = TRUE)
-      
-      if (is.infinite(lower_nu) || is.infinite(upper_nu)) {
-        stop(paste0("Cannot interpolate critical value for nu = ", nu, ", p = ", p))
-      }
-      
-      if (lower_nu == upper_nu) {
-        # Exact match found via bracketing
-        return(cv[[paste0(lower_nu, ",", p)]])
-      }
-      
-      # Linear interpolation
-      lower_cv <- cv[[paste0(lower_nu, ",", p)]]
-      upper_cv <- cv[[paste0(upper_nu, ",", p)]]
-      
-      interpolated <- lower_cv + (upper_cv - lower_cv) * (nu - lower_nu) / (upper_nu - lower_nu)
-      
-      return(interpolated)
+      # Pearson & Hartley (1972, Table 51) critical values, alpha = 0.05;
+      # single shared copy in utils.R (also used by the CA facility)
+      .ctGreenacreCritical(nrow, ncol)
     },
     
     # -------------------------------------------------------------------------
@@ -353,7 +208,8 @@ chisqclusterClass <- R6::R6Class(
         # Not enough range to compute ratios; return qmin
         return(list(
           optimal_clusters = qmin,
-          optimal_step = n - qmin,
+          # step that leaves qmin clusters (n_items items, one merge per step)
+          optimal_step = max(0, n_items - qmin),
           ratios = NULL
         ))
       }
@@ -730,7 +586,7 @@ chisqclusterClass <- R6::R6Class(
       } else {
         # Greenacre critical chi-square method interpretation
         interpretation <- if (sig_step == 0) {
-          "No rows can be merged without losing significant association—all rows are distinct."
+          "No rows can be merged without losing significant association—all rows are distinct. This is common with large samples, where even small differences between profiles are statistically significant; the inertia gain ratio method (Husson et al., 2017) does not depend on sample size."
         } else if (sig_step == nrow(row_result$merge_statistics) - 1) {
           "All rows can be merged into a single group—there is no significant heterogeneity among rows."
         } else {
@@ -817,7 +673,7 @@ chisqclusterClass <- R6::R6Class(
       } else {
         # Greenacre critical chi-square method interpretation
         interpretation <- if (sig_step == 0) {
-          "No columns can be merged without losing significant association—all columns are distinct."
+          "No columns can be merged without losing significant association—all columns are distinct. This is common with large samples, where even small differences between profiles are statistically significant; the inertia gain ratio method (Husson et al., 2017) does not depend on sample size."
         } else if (sig_step == nrow(col_result$merge_statistics) - 1) {
           "All columns can be merged into a single group—there is no significant heterogeneity among columns."
         } else {
@@ -911,9 +767,25 @@ chisqclusterClass <- R6::R6Class(
       return(groups)
     },
     
+    # Extract the pieces a dendrogram needs (not the whole result list)
+    .dendroState = function(result) {
+      list(
+        merge_order = result$merge_order,
+        merge_matrix = result$merge_matrix,
+        height_vector = result$height_vector,
+        significant_step = result$significant_step,
+        initial_chi_square = result$initial_chi_square,
+        method_info = list(
+          method = result$method_info$method,
+          optimal_clusters = result$method_info$optimal_clusters
+        )
+      )
+    },
+    
     .plotRowDendro = function(image, ggtheme, theme, ...) {
       
-      result <- private$.rowClusterResult
+      # Read from the image state (private fields are NULL on export)
+      result <- image$state
       
       if (is.null(result)) {
         return(FALSE)
@@ -994,7 +866,7 @@ chisqclusterClass <- R6::R6Class(
           y = "Chi-squared statistic",
           caption = caption_text
         ) +
-        ggplot2::theme_minimal() +
+        ggtheme +
         ggplot2::theme(
           plot.title = ggplot2::element_text(hjust = 0.5, face = "bold", size = 12),
           axis.text = ggplot2::element_text(size = 10),
@@ -1010,7 +882,8 @@ chisqclusterClass <- R6::R6Class(
     
     .plotColDendro = function(image, ggtheme, theme, ...) {
       
-      result <- private$.colClusterResult
+      # Read from the image state (private fields are NULL on export)
+      result <- image$state
       
       if (is.null(result)) {
         return(FALSE)
@@ -1091,7 +964,7 @@ chisqclusterClass <- R6::R6Class(
           y = "Chi-squared statistic",
           caption = caption_text
         ) +
-        ggplot2::theme_minimal() +
+        ggtheme +
         ggplot2::theme(
           plot.title = ggplot2::element_text(hjust = 0.5, face = "bold", size = 12),
           axis.text = ggplot2::element_text(size = 10),
@@ -1156,7 +1029,7 @@ chisqclusterClass <- R6::R6Class(
         "<h3 style='color: #2874A6; margin-top: 1.5em;'>Partition Selection Methods</h3>",
         
         # Method 1: Greenacre
-        "<h4 style='color: #1a5276; margin-top: 1em;'>Method 1: Critical Chi-Square (Greenacre, 2017)",
+        "<h4 style='color: #1a5276; margin-top: 1em;'>Method 1: Critical Chi-Squared (Greenacre, 2017)",
         if (partition_method == "greenacre") " — <em>currently selected</em>" else "",
         "</h4>",
         
@@ -1175,7 +1048,7 @@ chisqclusterClass <- R6::R6Class(
         "providing a principled basis for simplifying the table.</p>",
         
         "<p><strong>Table size constraints:</strong> Critical values are only available for tables where ",
-        "min(rows, columns) ≤ 11 and max(rows, columns) ≤ 101. For larger tables, use the inertia ",
+        "3 ≤ min(rows, columns) ≤ 11 and max(rows, columns) ≤ 201. For larger tables, use the inertia ",
         "gain ratio method instead.</p>",
         
         # Method 2: Husson
@@ -1199,7 +1072,7 @@ chisqclusterClass <- R6::R6Class(
         "structure than the next coarser partition.</p>",
         
         "<p><strong>Interpretation:</strong> The resulting groups represent a parsimonious summary of ",
-        "the table's structure, balancing detail against simplicity. Unlike the critical chi-square ",
+        "the table's structure, balancing detail against simplicity. Unlike the critical chi-squared ",
         "method, this approach does not make formal significance claims—it identifies structure rather ",
         "than testing hypotheses.</p>",
         
@@ -1226,7 +1099,7 @@ chisqclusterClass <- R6::R6Class(
         
         "<p>The <strong>red dashed line</strong> marks the partition cutoff:</p>",
         "<ul style='margin-left: 2em;'>",
-        "<li>For the <strong>critical chi-square method</strong>, the line is positioned between the last ",
+        "<li>For the <strong>critical chi-squared method</strong>, the line is positioned between the last ",
         "statistically justified merge and the first unjustified merge. Clusters forming entirely to the ",
         "left of this line represent statistically significant groupings at α = 0.05.</li>",
         "<li>For the <strong>inertia gain ratio method</strong>, the line indicates the optimal partition ",
@@ -1236,7 +1109,7 @@ chisqclusterClass <- R6::R6Class(
         # Practical considerations
         "<h3 style='color: #2874A6; margin-top: 1.5em;'>Practical Considerations</h3>",
         
-        "<p><strong>Comparing the two methods:</strong> The critical chi-square method provides a formal ",
+        "<p><strong>Comparing the two methods:</strong> The critical chi-squared method provides a formal ",
         "significance test but is limited to smaller tables. The inertia gain ratio method is more flexible ",
         "and often suggests fewer, larger clusters. When both methods are applicable, comparing their results ",
         "can provide useful perspective on the table's structure.</p>",

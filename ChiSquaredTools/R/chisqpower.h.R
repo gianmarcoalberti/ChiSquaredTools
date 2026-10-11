@@ -171,7 +171,8 @@ chisqpowerResults <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class(
                 name="resultsTable",
                 title="Power Analysis Results",
                 refs=list(
-                    "cohen1988"),
+                    "cohen1988",
+                    "hoenig2001"),
                 clearWith=list(
                     "analysisType",
                     "nRows",

@@ -32,6 +32,9 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
         .srdResultCols = NULL,
         .clusterResultRows = NULL,
         .clusterResultCols = NULL,
+        .attrInfluence = NULL,
+        .attrElimination = NULL,
+        .attrElbowStep = NULL,
         
         # =====================================================================
         # INIT - Set up table structure to prevent flickering
@@ -115,7 +118,7 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
             # Pre-populate inertia table
             if (self$options$showInertia) {
                 table <- self$results$inertiaTable
-                nAxes <- self$options$nAxes
+                nAxes <- private$.effectiveNAxes()
                 for (k in 1:nAxes) {
                     table$addRow(rowKey = k, values = list(
                         dim = k, eigenvalue = NA, percent = NA, cumPercent = NA,
@@ -127,7 +130,7 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
             # Pre-populate symmetric coordinates table columns
             if (self$options$showSymmetricCoords) {
                 table <- self$results$symmetricCoordsTable
-                nAxes <- self$options$nAxes
+                nAxes <- private$.effectiveNAxes()
                 for (k in 1:nAxes) {
                     table$addColumn(
                         name = paste0("dim", k),
@@ -148,7 +151,7 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
             # Pre-populate contribution biplot coordinates table columns
             if (self$options$showContribCoords) {
                 table <- self$results$contribCoordsTable
-                nAxes <- self$options$nAxes
+                nAxes <- private$.effectiveNAxes()
                 for (k in 1:nAxes) {
                     table$addColumn(
                         name = paste0("dim", k),
@@ -162,7 +165,7 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
             # Pre-populate quality & contributions table columns
             if (self$options$showQualityContrib) {
                 table <- self$results$qualityContribTable
-                nAxes <- self$options$nAxes
+                nAxes <- private$.effectiveNAxes()
                 for (k in 1:nAxes) {
                     table$addColumn(
                         name = paste0("cos2_", k),
@@ -199,7 +202,7 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
             # Pre-populate dimension summary table
             if (self$options$showDimSummary) {
                 table <- self$results$dimSummaryTable
-                nAxes <- self$options$nAxes
+                nAxes <- private$.effectiveNAxes()
                 for (k in 1:nAxes) {
                     table$addRow(rowKey = k, values = list(
                         dimension = paste("Dim", k), variance = NA,
@@ -224,7 +227,7 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
             # Pre-populate correlations table columns
             if (self$options$showCorrelations) {
                 table <- self$results$correlTable
-                nAxes <- self$options$nAxes
+                nAxes <- private$.effectiveNAxes()
                 
                 table$addColumn(name = "category", title = "Category", type = "text")
                 for (k in 1:nAxes) {
@@ -302,7 +305,29 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
             
             # Populate method information if requested
             if (self$options$showMethodInfo) private$.populateMethodInfo()
-        },
+            
+            # Warn when fewer dimensions exist than requested or plotted
+            # (e.g. a 2 x J table has a single dimension)
+            private$.addAxesNotice()
+        
+        # Attribute assessment (Krzanowski 1993)
+        private$.attrInfluence <- NULL
+        private$.attrElimination <- NULL
+        private$.attrElbowStep <- NULL
+        
+        if (self$options$showAttrInfluence) {
+            private$.populateAttrInfluenceTable()
+        }
+        
+        if (self$options$showAttrElimination) {
+            private$.populateAttrEliminationTable()
+        }
+        
+        # Save what each plot draws into its image state, so that plots
+        # also render when jamovi exports them from a fresh instance
+        # (private fields set in .run() are NULL at export time)
+        private$.setPlotStates()
+    }, 
         
         # =====================================================================
         # BUILD CONTINGENCY TABLE
@@ -331,31 +356,149 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
                 return(NULL)
             }
             
-            if (is.null(count_var)) {
-                cont_table <- table(data[[row_var]], data[[col_var]])
-            } else {
-                counts <- data[[count_var]]
-                if (any(counts < 0, na.rm = TRUE)) {
-                    jmvcore::reject("Counts variable contains negative values")
-                    return(NULL)
-                }
-                formula_obj <- stats::as.formula(paste0("`", count_var, "` ~ `", 
-                                                        row_var, "` + `", col_var, "`"))
-                cont_table <- stats::xtabs(formula_obj, data = data)
-            }
-            
-            if (nrow(cont_table) < 2 || ncol(cont_table) < 2) {
-                return(NULL)
-            }
-            
-            row_sums <- rowSums(cont_table)
-            col_sums <- colSums(cont_table)
-            
-            if (any(row_sums == 0) || any(col_sums == 0)) {
-                return(NULL)
-            }
+            # Build contingency table safely (shared helper in utils.R);
+            # degenerate tables now stop with a message instead of
+            # silently returning NULL and leaving empty tables
+            cont_table <- .ctBuildTable(data, c(row_var, col_var), count_var)
+            .ctRejectTooFewLevels(cont_table, row_var, col_var)
+            .ctRejectEmptyMargins(cont_table, row_var, col_var)
             
             return(as.matrix(cont_table))
+        },
+        
+        # =====================================================================
+        # PLOT STATE: SAVE (in .run) AND RESTORE (in each render function)
+        # =====================================================================
+        # Only the pieces the plots draw are stored: a pruned CA result
+        # (coordinates, masses, eigenvalues, contributions, qualities),
+        # the observed table, cluster memberships and attribute results.
+        .pruneCA = function(ca) {
+            if (is.null(ca)) return(NULL)
+            keep <- c("N", "n_rows", "n_cols", "row_mass", "col_mass",
+                      "row_std", "col_std", "row_princ", "col_princ",
+                      "row_contrib_coord", "col_contrib_coord",
+                      "eigenvalues", "inertia_total", "inertia_proportion",
+                      "inertia_cumulative", "n_axes", "stat_name",
+                      "distance_type", "resid_label",
+                      "row_contrib", "col_contrib", "row_cos2", "col_cos2")
+            ca[intersect(keep, names(ca))]
+        },
+        
+        .setPlotStates = function() {
+            ca  <- private$.pruneCA(private$.caResult)
+            N   <- private$.contingencyTable
+            res <- self$results
+            
+            res$screePlot$setState(list(ca = ca))
+            res$symmetricPlot$setState(list(
+                ca = ca, N = N,
+                srdRows = private$.srdResultRows,
+                srdCols = private$.srdResultCols))
+            res$geometricPlot$setState(list(ca = ca))
+            res$contribPlot$setState(list(
+                ca = ca,
+                srdRows = private$.srdResultRows,
+                srdCols = private$.srdResultCols,
+                clusterRows = private$.clusterResultRows,
+                clusterCols = private$.clusterResultCols))
+            res$overdispersionPlot$setState(list(N = N))
+            
+            attr <- list(
+                N = N,
+                attrInfluence = private$.attrInfluence,
+                attrElimination = private$.attrElimination,
+                attrElbowStep = private$.attrElbowStep)
+            res$attrInfluencePlot$setState(attr)
+            res$attrEliminationPlot$setState(attr)
+            res$reducedCAPlot$setState(c(attr, list(ca = ca)))
+        },
+        
+        # Called first in every render function: when the instance is fresh
+        # (export), refill the private fields from the image state
+        .restoreFromState = function(image) {
+            st <- image$state
+            if (is.null(st)) return(invisible(FALSE))
+            if (is.null(private$.caResult) && !is.null(st$ca))
+                private$.caResult <- st$ca
+            if (is.null(private$.contingencyTable) && !is.null(st$N))
+                private$.contingencyTable <- st$N
+            if (is.null(private$.srdResultRows) && !is.null(st$srdRows))
+                private$.srdResultRows <- st$srdRows
+            if (is.null(private$.srdResultCols) && !is.null(st$srdCols))
+                private$.srdResultCols <- st$srdCols
+            if (is.null(private$.clusterResultRows) && !is.null(st$clusterRows))
+                private$.clusterResultRows <- st$clusterRows
+            if (is.null(private$.clusterResultCols) && !is.null(st$clusterCols))
+                private$.clusterResultCols <- st$clusterCols
+            if (is.null(private$.attrInfluence) && !is.null(st$attrInfluence))
+                private$.attrInfluence <- st$attrInfluence
+            if (is.null(private$.attrElimination) && !is.null(st$attrElimination))
+                private$.attrElimination <- st$attrElimination
+            if (is.null(private$.attrElbowStep) && !is.null(st$attrElbowStep))
+                private$.attrElbowStep <- st$attrElbowStep
+            invisible(TRUE)
+        },
+        
+        # =====================================================================
+        # NOTICE WHEN THE TABLE HAS FEWER DIMENSIONS THAN REQUESTED
+        # =====================================================================
+        .addAxesNotice = function() {
+            ca <- private$.caResult
+            if (is.null(ca)) return()
+            nExtracted <- ca$n_axes
+            nRequested <- self$options$nAxes
+            maxPlotDim <- max(self$options$dim1, self$options$dim2)
+            
+            msgs <- character(0)
+            if (nExtracted == 1) {
+                # e.g. a 2 x J table: one dimension only
+                if (nRequested > 1 || maxPlotDim > 1) {
+                    msgs <- "This table has only one dimension (min(rows, columns) \u2212 1 = 1), so only Dimension 1 is reported and the two-dimensional plots cannot be drawn."
+                }
+            } else {
+                if (nRequested > nExtracted) {
+                    msgs <- c(msgs, sprintf(
+                        "This table has %d dimensions (min(rows, columns) \u2212 1); %d were requested, so %d are reported.",
+                        nExtracted, nRequested, nExtracted))
+                }
+                if (maxPlotDim > nExtracted) {
+                    msgs <- c(msgs, sprintf(
+                        "The plots cannot display Dimension %d, because the table has %d dimensions. Choose plot dimensions between 1 and %d.",
+                        maxPlotDim, nExtracted, nExtracted))
+                }
+            }
+            # Hide the two-dimensional plots that cannot be drawn: a visible
+            # image whose render function returns FALSE keeps spinning
+            if (maxPlotDim > nExtracted) {
+                for (pl in c("symmetricPlot", "geometricPlot", "contribPlot", "reducedCAPlot"))
+                    self$results[[pl]]$setVisible(FALSE)
+            }
+            
+            if (length(msgs) == 0) return()
+            
+            notice <- jmvcore::Notice$new(
+                self$options,
+                name = 'axesNotice',
+                type = jmvcore::NoticeType$WARNING
+            )
+            notice$setContent(paste(msgs, collapse = " "))
+            self$results$insert(1, notice)
+        },
+        
+        # =====================================================================
+        # EFFECTIVE NUMBER OF AXES
+        # min(requested axes, min(I, J) - 1), computed from the factor levels
+        # so that .init() builds only the dimension columns .run() can fill.
+        # (Empty levels are rejected in .buildContingencyTable(), so the
+        # number of levels equals the table dimensions.)
+        # =====================================================================
+        .effectiveNAxes = function() {
+            nAxes <- self$options$nAxes
+            data <- self$data
+            nI <- length(levels(as.factor(data[[self$options$rows]])))
+            nJ <- length(levels(as.factor(data[[self$options$cols]])))
+            if (nI < 2 || nJ < 2) return(nAxes)
+            max(1, min(nAxes, min(nI, nJ) - 1))
         },
         
         # =====================================================================
@@ -409,19 +552,12 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
             d_all <- svd_result$d
             eigenvalues_all <- d_all^2
             
-            # Determine starting index for axes
-            # For Pearson residuals, the doubly-centred matrix has rank M* = min(I,J)-1,
-            # yielding a trivial first singular value ≈ 1.
-            # For Freeman-Tukey residuals, the matrix is NOT doubly-centred, so no trivial axis.
-            if (distance_metric == "freemanTukey") {
-                start_idx <- 1
-            } else {
-                if (length(d_all) > 0 && (abs(d_all[1] - 1) < 0.001 || d_all[1] > 0.999)) {
-                    start_idx <- 2
-                } else {
-                    start_idx <- 1
-                }
-            }
+            # Starting index for axes: always the first singular value.
+            # The residual matrices used here (Pearson, adjusted, Freeman-Tukey)
+            # are already centred on independence, so there is no trivial
+            # singular value of 1 to skip; a genuine first axis can have an
+            # inertia close to 1 (e.g. a perfectly diagonal table).
+            start_idx <- 1
             
             axes_idx <- start_idx:(start_idx + n_axes - 1)
             axes_idx <- axes_idx[axes_idx <= length(d_all)]
@@ -1080,7 +1216,8 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
             qmax <- min(qmax, n)
             
             if (qmax <= qmin) {
-                return(list(optimal_clusters = qmin, optimal_step = n - qmin))
+                # step that leaves qmin clusters (n_items items, one merge per step)
+                return(list(optimal_clusters = qmin, optimal_step = max(0, n_items - qmin)))
             }
             
             # Compute ratios for each candidate q
@@ -1258,104 +1395,393 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
             list(groups = groups, singletons = singletons, method = method)
         },
         
+        # =====================================================================
+        # ATTRIBUTE ASSESSMENT (Krzanowski 1993)
+        # =====================================================================
+        # Implements Procrustes-based attribute selection to identify which
+        # columns (attributes) contribute most to the row configuration.
+        # Reference: Krzanowski, W.J. (1993). Attribute selection in correspondence
+        #   analysis of incidence matrices. Applied Statistics, 42(3), 529-541.
+        # =====================================================================
+        
+        # ---------------------------------------------------------------------
+        # Lightweight CA for Procrustes comparison
+        # ---------------------------------------------------------------------
+        .computeCAForProcrustes = function(N, n_dims = NULL) {
+            
+            distance_metric <- self$options$distanceMetric
+            residual_type <- self$options$residualType
+            
+            I <- nrow(N)
+            J <- ncol(N)
+            
+            if (I < 2 || J < 2) return(NULL)
+            
+            grand_total <- sum(N)
+            if (grand_total == 0) return(NULL)
+            
+            P <- N / grand_total
+            r <- rowSums(P)
+            c <- colSums(P)
+            
+            if (any(r == 0) || any(c == 0)) return(NULL)
+            
+            r_mat <- matrix(r, nrow = I, ncol = J, byrow = FALSE)
+            c_mat <- matrix(c, nrow = I, ncol = J, byrow = TRUE)
+            E <- r_mat * c_mat
+            
+            # Compute residuals based on selected metric and type
+            if (distance_metric == "freemanTukey") {
+                S <- 2 * (sqrt(P) - sqrt(E))
+                distance_type <- "hellinger"
+            } else if (residual_type == "adjusted") {
+                S <- private$.computeAdjustedResiduals(P, E, r, c, I, J)
+                distance_type <- "chisq_adj"
+            } else {
+                S <- (P - E) / sqrt(E + 1e-16)
+                distance_type <- "chisq"
+            }
+            
+            if (any(!is.finite(S))) return(NULL)
+            
+            svd_result <- tryCatch(svd(S), error = function(e) NULL)
+            if (is.null(svd_result)) return(NULL)
+            
+            d_all <- svd_result$d
+            eigenvalues_all <- d_all^2
+            
+            # Starting index: residual matrix is centred, so no trivial axis
+            start_idx <- 1
+            
+            # Determine dimensionality
+            max_axes <- min(I, J) - 1
+            if (is.null(n_dims)) {
+                # Auto: capture >= 80% of inertia, minimum 2
+                max_axes_for_inertia <- min(I - 1, J - 1)
+                if (start_idx == 2 && length(eigenvalues_all) > 1) {
+                    end_idx <- min(start_idx + max_axes_for_inertia - 1, length(eigenvalues_all))
+                    all_nontrivial <- eigenvalues_all[start_idx:end_idx]
+                } else {
+                    end_idx <- min(max_axes_for_inertia, length(eigenvalues_all))
+                    all_nontrivial <- eigenvalues_all[1:end_idx]
+                }
+                inertia_total <- sum(all_nontrivial)
+                
+                if (inertia_total > 0) {
+                    cum_inertia <- cumsum(all_nontrivial) / inertia_total
+                    n_dims <- which(cum_inertia >= 0.80)[1]
+                    if (is.na(n_dims)) n_dims <- length(all_nontrivial)
+                    n_dims <- max(n_dims, ifelse(max_axes >= 3, 3, 2))
+                } else {
+                    n_dims <- 2
+                }
+            }
+            n_dims <- min(n_dims, max_axes)
+            
+            axes_idx <- start_idx:(start_idx + n_dims - 1)
+            axes_idx <- axes_idx[axes_idx <= length(d_all)]
+            
+            if (length(axes_idx) == 0) return(NULL)
+            
+            d <- d_all[axes_idx]
+            U <- svd_result$u[, axes_idx, drop = FALSE]
+            n_axes_actual <- length(d)
+            eigenvalues <- d^2
+            
+            # Row principal coordinates
+            Dr_inv_sqrt <- diag(1 / sqrt(r))
+            row_std <- Dr_inv_sqrt %*% U
+            row_princ <- row_std %*% diag(d, nrow = length(d))
+            rownames(row_princ) <- rownames(N)
+            
+            # Total inertia
+            max_axes_for_inertia <- min(I - 1, J - 1)
+            if (start_idx == 2 && length(eigenvalues_all) > 1) {
+                end_idx <- min(start_idx + max_axes_for_inertia - 1, length(eigenvalues_all))
+                all_nontrivial <- eigenvalues_all[start_idx:end_idx]
+            } else {
+                end_idx <- min(max_axes_for_inertia, length(eigenvalues_all))
+                all_nontrivial <- eigenvalues_all[1:end_idx]
+            }
+            inertia_total <- sum(all_nontrivial)
+            inertia_captured <- sum(eigenvalues) / inertia_total
+            
+            list(
+                row_princ = row_princ,
+                row_mass = r,
+                eigenvalues = eigenvalues,
+                inertia_total = inertia_total,
+                inertia_captured = inertia_captured,
+                n_dims = n_axes_actual,
+                distance_type = distance_type
+            )
+        },
+        
+        # ---------------------------------------------------------------------
+        # Weighted Procrustes M² (Krzanowski 1988, pp. 158-160)
+        # ---------------------------------------------------------------------
+        .computeProcrustesM2 = function(X, Y, weights = NULL, scale = TRUE) {
+            
+            r <- nrow(X)
+            m <- ncol(X)
+            
+            if (nrow(Y) != r) return(Inf)
+            
+            # Match dimensions
+            if (ncol(Y) < m) {
+                Y <- cbind(Y, matrix(0, nrow = r, ncol = m - ncol(Y)))
+            } else if (ncol(Y) > m) {
+                Y <- Y[, 1:m, drop = FALSE]
+            }
+            
+            # Set up weights
+            if (is.null(weights)) {
+                w <- rep(1 / r, r)
+            } else {
+                w <- weights / sum(weights)
+            }
+            
+            # Safe diagonal construction
+            D <- if (length(w) == 1) matrix(w, 1, 1) else diag(w)
+            
+            # Centre both configurations (weighted centroid at origin)
+            centroid_X <- crossprod(w, X)
+            centroid_Y <- crossprod(w, Y)
+            
+            X_c <- sweep(X, 2, centroid_X)
+            Y_c <- sweep(Y, 2, centroid_Y)
+            
+            # Rescale so that weighted SS = 1 (if requested)
+            if (scale) {
+                ss_X <- sum(diag(t(X_c) %*% D %*% X_c))
+                ss_Y <- sum(diag(t(Y_c) %*% D %*% Y_c))
+                
+                if (ss_X > 1e-12) X_c <- X_c / sqrt(ss_X)
+                if (ss_Y > 1e-12) Y_c <- Y_c / sqrt(ss_Y)
+            }
+            
+            # Optimal rotation via SVD of X'DY
+            cross <- t(X_c) %*% D %*% Y_c
+            svd_cross <- tryCatch(svd(cross), error = function(e) NULL)
+            if (is.null(svd_cross)) return(Inf)
+            
+            Q <- svd_cross$v %*% t(svd_cross$u)
+            
+            # Rotate Y and compute M²
+            Y_rotated <- Y_c %*% Q
+            residuals <- X_c - Y_rotated
+            M2 <- sum(diag(t(residuals) %*% D %*% residuals))
+            
+            M2
+        },
+        
+        # ---------------------------------------------------------------------
+        # Single-pass attribute influence ranking
+        # ---------------------------------------------------------------------
+        .assessAttributeInfluence = function(N) {
+            
+            c_total <- ncol(N)
+            
+            # Reference CA on full matrix
+            ca_ref <- private$.computeCAForProcrustes(N)
+            if (is.null(ca_ref)) return(NULL)
+            
+            X_ref <- ca_ref$row_princ
+            p_i_full <- ca_ref$row_mass
+            m <- ca_ref$n_dims
+            
+            # Compute M² for each column deletion
+            M2_values <- numeric(c_total)
+            names(M2_values) <- colnames(N)
+            
+            for (j in 1:c_total) {
+                N_reduced <- N[, -j, drop = FALSE]
+                
+                # Check for zero-sum rows after deletion
+                if (any(rowSums(N_reduced) == 0) || any(colSums(N_reduced) == 0)) {
+                    M2_values[j] <- Inf
+                    next
+                }
+                
+                ca_reduced <- private$.computeCAForProcrustes(N_reduced, n_dims = m)
+                
+                if (is.null(ca_reduced)) {
+                    M2_values[j] <- Inf
+                    next
+                }
+                
+                Y_j <- ca_reduced$row_princ
+                
+                # Pad with zeros if fewer dimensions
+                if (ncol(Y_j) < m) {
+                    Y_j <- cbind(Y_j, matrix(0, nrow = nrow(Y_j), ncol = m - ncol(Y_j)))
+                }
+                
+                M2_values[j] <- private$.computeProcrustesM2(
+                    X_ref, Y_j, 
+                    weights = p_i_full, 
+                    scale = TRUE
+                )
+            }
+            
+            # Rank: largest M² = most important (removing it distorts most)
+            influence_order <- order(M2_values, decreasing = TRUE)
+            
+            data.frame(
+                attribute = colnames(N)[influence_order],
+                M2 = M2_values[influence_order],
+                rank = 1:c_total,
+                stringsAsFactors = FALSE
+            )
+        },
+        
+        # ---------------------------------------------------------------------
+        # Backward elimination sequence (computationally expensive)
+        # ---------------------------------------------------------------------
+        .assessAttributeElimination = function(N) {
+            
+            c_total <- ncol(N)
+            r_total <- nrow(N)
+            
+            # Reference CA for full data
+            ca_full <- private$.computeCAForProcrustes(N)
+            if (is.null(ca_full)) return(NULL)
+            
+            m <- ca_full$n_dims
+            
+            # Minimum columns to retain
+            min_cols <- max(2, m)
+            n_steps <- c_total - min_cols
+            
+            if (n_steps < 1) return(NULL)
+            
+            remaining_cols <- 1:c_total
+            col_names <- colnames(N)
+            
+            elimination_sequence <- data.frame(
+                step = integer(),
+                attribute_removed = character(),
+                M2_at_removal = numeric(),
+                n_remaining = integer(),
+                stringsAsFactors = FALSE
+            )
+            
+            for (step in 1:n_steps) {
+                current_N <- N[, remaining_cols, drop = FALSE]
+                n_current <- ncol(current_N)
+                
+                # Reference CA for current reduced matrix
+                ca_current <- private$.computeCAForProcrustes(current_N, n_dims = m)
+                if (is.null(ca_current)) break
+                
+                X_current <- ca_current$row_princ
+                p_i_current <- ca_current$row_mass
+                m_current <- ncol(X_current)
+                
+                # Compute M² for each remaining column
+                M2_step <- numeric(n_current)
+                for (jj in 1:n_current) {
+                    N_minus_j <- current_N[, -jj, drop = FALSE]
+                    
+                    if (any(rowSums(N_minus_j) == 0) || any(colSums(N_minus_j) == 0)) {
+                        M2_step[jj] <- Inf
+                        next
+                    }
+                    
+                    ca_minus_j <- private$.computeCAForProcrustes(N_minus_j, n_dims = m_current)
+                    
+                    if (is.null(ca_minus_j)) {
+                        M2_step[jj] <- Inf
+                        next
+                    }
+                    
+                    Y_j <- ca_minus_j$row_princ
+                    if (ncol(Y_j) < m_current) {
+                        Y_j <- cbind(Y_j, matrix(0, nrow = nrow(Y_j), ncol = m_current - ncol(Y_j)))
+                    }
+                    
+                    M2_step[jj] <- private$.computeProcrustesM2(
+                        X_current, Y_j,
+                        weights = p_i_current,
+                        scale = TRUE
+                    )
+                }
+                
+                # All indispensable?
+                if (all(is.infinite(M2_step))) break
+                
+                # Remove the least important column
+                least_important <- which.min(M2_step)
+                removed_col_idx <- remaining_cols[least_important]
+                
+                elimination_sequence <- rbind(elimination_sequence, data.frame(
+                    step = step,
+                    attribute_removed = col_names[removed_col_idx],
+                    M2_at_removal = M2_step[least_important],
+                    n_remaining = n_current - 1,
+                    stringsAsFactors = FALSE
+                ))
+                
+                remaining_cols <- remaining_cols[-least_important]
+            }
+            
+            elimination_sequence
+        },
+        
+        # ---------------------------------------------------------------------
+        # Elbow detection for elimination sequence
+        # ---------------------------------------------------------------------
+        .detectElbow = function(M2_values) {
+            
+            n <- length(M2_values)
+            if (n < 3) return(max(1, n - 1))
+            
+            # Normalise to [0, 1] range
+            x <- seq(0, 1, length.out = n)
+            y_range <- range(M2_values)
+            
+            if (diff(y_range) < 1e-15) return(n %/% 2)
+            
+            y <- (M2_values - y_range[1]) / diff(y_range)
+            
+            # Distance of each point to line from first to last point
+            x1 <- x[1]; y1 <- y[1]
+            x2 <- x[n]; y2 <- y[n]
+            
+            line_len <- sqrt((x2 - x1)^2 + (y2 - y1)^2)
+            if (line_len < 1e-15) return(n %/% 2)
+            
+            distances <- abs((y2 - y1) * x - (x2 - x1) * y + x2 * y1 - y2 * x1) / line_len
+            
+            which.max(distances)
+        },
+        
+        # ---------------------------------------------------------------------
+        # Get list of low-influence attributes (those removed before elbow)
+        # ---------------------------------------------------------------------
+        .getLowInfluenceAttributes = function() {
+            
+            if (is.null(private$.attrElimination) || 
+                nrow(private$.attrElimination) == 0 ||
+                is.null(private$.attrElbowStep)) {
+                return(character(0))
+            }
+            
+            elbow_step <- private$.attrElbowStep
+            if (elbow_step < 1) return(character(0))
+            
+            # Attributes removed in steps 1 to elbow_step are "low influence"
+            n_to_drop <- min(elbow_step, nrow(private$.attrElimination))
+            private$.attrElimination$attribute_removed[1:n_to_drop]
+        },
+        
         # ---------------------------------------------------------------------
         # Get critical chi-square value (Greenacre method)
         # ---------------------------------------------------------------------
         .getCriticalChiSquare = function(nrow, ncol) {
-            # Critical values from Pearson & Hartley (1972), Table 51
-            # at α = 0.05
-            
-            p <- min(nrow - 1, ncol - 1)
-            nu <- max(nrow - 1, ncol - 1)
-            
-            if (p < 2 || nu < 2) {
-                stop("Table too small for critical value lookup")
-            }
-            
-            if (p > 10 || nu > 100) {
-                stop("Table exceeds critical value lookup limits")
-            }
-            
-            # Sparse lookup table (key = "nu,p")
-            cv <- list(
-                "2,2" = 8.594, "3,2" = 10.74, "4,2" = 12.68, "5,2" = 14.49,
-                "6,2" = 16.21, "7,2" = 17.88, "8,2" = 19.49, "9,2" = 21.06,
-                "10,2" = 22.61, "11,2" = 24.12, "12,2" = 25.61,
-                "14,2" = 28.53, "19,2" = 35.59, "24,2" = 42.07, "29,2" = 48.27,
-                "39,2" = 60.02, "49,2" = 75.46, "59,2" = 87.66, "69,2" = 99.70,
-                "79,2" = 111.6, "89,2" = 123.4, "99,2" = 135.0,
-                "3,3" = 13.11, "4,3" = 15.24, "5,3" = 17.21, "6,3" = 19.09,
-                "7,3" = 20.88, "8,3" = 22.62, "9,3" = 24.31, "10,3" = 25.96,
-                "11,3" = 27.58, "12,3" = 29.17,
-                "14,3" = 32.27, "19,3" = 39.52, "24,3" = 46.27, "29,3" = 52.80,
-                "39,3" = 68.50, "49,3" = 81.44, "59,3" = 94.09, "69,3" = 106.5,
-                "79,3" = 118.8, "89,3" = 130.9, "99,3" = 143.0,
-                "4,4" = 17.52, "5,4" = 19.63, "6,4" = 21.62, "7,4" = 23.53,
-                "8,4" = 25.37, "9,4" = 27.15, "10,4" = 28.90, "11,4" = 30.60,
-                "12,4" = 32.27,
-                "14,4" = 35.52, "19,4" = 43.08, "24,4" = 50.27, "29,4" = 57.24,
-                "39,4" = 76.18, "49,4" = 89.73, "59,4" = 102.9, "69,4" = 115.9,
-                "79,4" = 128.6, "89,4" = 141.2, "99,4" = 153.6,
-                "5,5" = 21.85, "6,5" = 23.95, "7,5" = 25.96, "8,5" = 27.88,
-                "9,5" = 29.75, "10,5" = 31.57, "11,5" = 33.35, "12,5" = 35.09,
-                "14,5" = 38.57, "19,5" = 46.44, "24,5" = 53.95, "29,5" = 61.29,
-                "39,5" = 83.29, "49,5" = 102.9, "59,5" = 117.0, "69,5" = 130.9,
-                "79,5" = 144.4, "89,5" = 157.8, "99,5" = 170.9,
-                "6,6" = 26.14, "7,6" = 28.23, "8,6" = 30.24, "9,6" = 32.18,
-                "10,6" = 34.08, "11,6" = 35.93, "12,6" = 37.73,
-                "14,6" = 41.46, "19,6" = 49.64, "24,6" = 57.46, "29,6" = 65.12,
-                "39,6" = 88.29, "49,6" = 102.9, "59,6" = 117.0, "69,6" = 130.9,
-                "79,6" = 144.4, "89,6" = 157.8, "99,6" = 170.9,
-                "7,7" = 30.40, "8,7" = 32.48, "9,7" = 34.50, "10,7" = 36.45,
-                "11,7" = 38.36, "12,7" = 40.22,
-                "14,7" = 44.22, "19,7" = 52.70, "24,7" = 60.83, "29,7" = 68.77,
-                "39,7" = 91.57, "49,7" = 106.4, "59,7" = 120.8, "69,7" = 134.8,
-                "79,7" = 148.6, "89,7" = 162.1, "99,7" = 175.4,
-                "8,8" = 34.63, "9,8" = 36.70, "10,8" = 38.72, "11,8" = 40.69,
-                "12,8" = 42.60,
-                "14,8" = 46.86, "19,8" = 55.62, "24,8" = 64.04, "29,8" = 72.26,
-                "39,8" = 96.11, "49,8" = 111.2, "59,8" = 125.8, "69,8" = 140.1,
-                "79,8" = 154.0, "89,8" = 167.8, "99,8" = 181.3,
-                "9,9" = 38.84, "10,9" = 40.91, "11,9" = 42.93, "12,9" = 44.90,
-                "14,9" = 49.40, "19,9" = 58.43, "24,9" = 67.11, "29,9" = 75.60,
-                "39,9" = 99.43, "49,9" = 114.8, "59,9" = 129.6, "69,9" = 144.1,
-                "79,9" = 158.2, "89,9" = 172.1, "99,9" = 185.8,
-                "10,10" = 43.04, "11,10" = 45.10, "12,10" = 47.12,
-                "14,10" = 51.86, "19,10" = 61.14, "24,10" = 70.07, "29,10" = 78.81,
-                "39,10" = 102.6, "49,10" = 118.2, "59,10" = 133.3, "69,10" = 147.9,
-                "79,10" = 162.2, "89,10" = 176.3, "99,10" = 190.1
-            )
-            
-            key <- paste0(nu, ",", p)
-            if (key %in% names(cv)) {
-                return(cv[[key]])
-            }
-            
-            # Interpolate if exact value not available
-            available_nu <- as.integer(sapply(strsplit(
-                names(cv)[grepl(paste0(",", p, "$"), names(cv))], ","
-            ), `[`, 1))
-            available_nu <- sort(available_nu)
-            
-            if (length(available_nu) == 0) {
-                stop(paste0("No critical values available for p = ", p))
-            }
-            
-            lower_nu <- max(available_nu[available_nu <= nu], na.rm = TRUE)
-            upper_nu <- min(available_nu[available_nu >= nu], na.rm = TRUE)
-            
-            if (is.infinite(lower_nu) || is.infinite(upper_nu)) {
-                stop(paste0("Cannot interpolate for nu = ", nu, ", p = ", p))
-            }
-            
-            if (lower_nu == upper_nu) {
-                return(cv[[paste0(lower_nu, ",", p)]])
-            }
-            
-            lower_cv <- cv[[paste0(lower_nu, ",", p)]]
-            upper_cv <- cv[[paste0(upper_nu, ",", p)]]
-            
-            lower_cv + (upper_cv - lower_cv) * (nu - lower_nu) / (upper_nu - lower_nu)
+          # Pearson & Hartley (1972, Table 51) critical values, alpha = 0.05;
+          # single shared copy in utils.R (also used by the Clustering facility)
+          .ctGreenacreCritical(nrow, ncol)
         },
         
         # =====================================================================
@@ -1608,7 +2034,7 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
         .populateSymmetricCoordsTable = function() {
             ca <- private$.caResult
             table <- self$results$symmetricCoordsTable
-            nAxes <- self$options$nAxes
+            nAxes <- ca$n_axes
             
             # Row categories - principal coordinates
             rowNames <- rownames(ca$row_princ)
@@ -1646,7 +2072,7 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
         .populateContribCoordsTable = function() {
             ca <- private$.caResult
             table <- self$results$contribCoordsTable
-            nAxes <- self$options$nAxes
+            nAxes <- ca$n_axes
             focusOn <- self$options$contribFocus
             
             # Determine which variable defines the plane vs is interpreted
@@ -2017,7 +2443,7 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
             residual_type <- self$options$residualType
             
             if (distance_metric == "freemanTukey") {
-                stat_label <- "% of Ť²"
+                stat_label <- "% of T\u00b2"
                 residual_label <- "Freeman-Tukey Residuals"
             } else if (residual_type == "adjusted") {
                 stat_label <- "% of χ²ₐ"
@@ -2591,6 +3017,16 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
                 ))
             }
             
+            # No clusters with a test-based method: usually a large-sample effect
+            if (row_key == 0 && method %in% c("srd", "greenacre")) {
+                n_total <- if (!is.null(ca)) sum(ca$N) else NA
+                note_parts <- c(note_parts, paste0(
+                    "No two categories could be merged: every merge was statistically significant",
+                    if (!is.na(n_total)) paste0(" (N = ", format(n_total, big.mark = ","), ")") else "",
+                    ". With large samples even small differences between profiles are significant; ",
+                    "the inertia gain ratio method (Husson) does not depend on sample size."))
+            }
+            
             # Method-specific explanation
             distance_label <- if (!is.null(ca) && ca$distance_type == "hellinger") {
                 "Hellinger distance"
@@ -2634,7 +3070,7 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
             if (self$options$clusterMethod == "greenacre") {
                 if (!is.null(cluster_rows) && !is.null(cluster_rows$method) && cluster_rows$method == "husson") {
                     note_parts <- c(note_parts, 
-                                    "Note: Table exceeds Greenacre critical value limits; Husson method used instead."
+                                    "Greenacre critical values are tabulated only for tables with 3 to 11 categories on the smaller side and at most 201 on the larger side; the Husson method was used instead."
                     )
                 }
             }
@@ -2711,7 +3147,7 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
               
               <h4 style='color: #5D6D7E; margin-top: 1em;'>Adjusted Standardised Residuals</h4>
               <p>Following Beh (2012), the adjusted residuals account for the variance of Pearson residuals:
-              \u0072\u0303<sub>ij</sub> = r<sub>ij</sub> \u00d7 \u221a((1\u2212p<sub>i\u00b7</sub>)(1\u2212p<sub>\u00b7j</sub>)).</p>
+              \u0072\u0303<sub>ij</sub> = r<sub>ij</sub> / \u221a((1\u2212p<sub>i\u00b7</sub>)(1\u2212p<sub>\u00b7j</sub>)).</p>
               <p>This adjustment has two key effects:</p>
               <ul style='margin-left: 1.5em;'>
                 <li><strong>Stretching:</strong> Profile coordinates move further from the origin, 
@@ -2832,7 +3268,7 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
                 contribution to the displayed dimensions (longer = more important)</li>
                 <li>Interpreted categories (triangles) that fall close to a plane-defining category are 
                 strongly associated with it</li>
-                <li>Above-average contributors are shown with solid symbols; below-average with hollow symbols</li>
+                <li>Above-average contributors are drawn with a darker, thicker outline; below-average contributors with a lighter, thinner outline</li>
               </ul>
               
               <p><strong>Dimension definition:</strong> The average contribution is 100%/k, where k is the 
@@ -2920,7 +3356,7 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
                 <li><strong>Highlighted cells:</strong> Residuals with |z| > threshold (default 1.96) are highlighted, 
                 indicating statistically noteworthy departures from independence at approximately p < 0.05.</li>
                 <li><strong>Row margins (% of statistic):</strong> The rightmost column shows each row's percentage 
-                contribution to the total test statistic (χ², χ²<sub>a</sub>, or Ť²). This identifies which row 
+                contribution to the total test statistic (χ², χ²<sub>a</sub>, or T²). This identifies which row 
                 categories contribute most to the overall association.</li>
                 <li><strong>Column margins (% of statistic):</strong> The bottom row shows each column's percentage 
                 contribution. Together with row margins, this reveals the structure of the association.</li>
@@ -3035,7 +3471,7 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
               the algorithm stops\u2014this merge would combine categories whose profiles differ significantly.</p>
               
               <p><strong>Table size constraints:</strong> Critical values are only available for tables where 
-              min(rows, columns) \u2264 11 and max(rows, columns) \u2264 101. For larger tables, the module 
+              3 \u2264 min(rows, columns) \u2264 11 and max(rows, columns) \u2264 201. For larger tables, the module 
               automatically uses the Husson method instead.</p>
               
               <p><strong>Note on Freeman-Tukey metric:</strong> When Freeman-Tukey residuals are selected, 
@@ -3175,14 +3611,15 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
               measures the total association strength in the table. Each dimension captures a proportion 
               of this total inertia, shown in the inertia decomposition table.</p>
               
-              <p><strong>Malinvaud's test</strong> (Saporta, 2006) assesses the statistical significance of the residual 
-              inertia after extracting k dimensions. It tests whether the remaining dimensions contain 
-              significant structure beyond what has been captured. A non-significant result (p > 0.05) 
-              suggests that k dimensions adequately represent the data; a significant result suggests 
-              additional dimensions may be informative.</p>
+              <p><strong>Malinvaud's test</strong> (Saporta, 2006) assesses whether residual inertia remains 
+              to be explained. In the row for dimension k, a non-significant result (p > 0.05) suggests 
+              that the first k\u22121 dimensions adequately represent the data; a significant result suggests 
+              that dimension k (and possibly further ones) carries structure worth interpreting.</p>
               
-              <p>The test statistic is: n \u00d7 (inertia in dimensions k+1 through M), where M = min(I,J)\u22121. 
-              This is compared to a chi-squared distribution with (I\u2212k)(J\u2212k) degrees of freedom.</p>
+              <p>In the row for dimension k, the test statistic is n \u00d7 (inertia in dimensions k through M), 
+              where M = min(I,J)\u22121, compared to a chi-squared distribution with (I\u2212k)(J\u2212k) degrees 
+              of freedom. It therefore asks whether any structure remains after the first k\u22121 dimensions; 
+              the row for dimension 1 is the overall test of independence.</p>
               
               <p style='font-size: 0.85em; color: #666; margin-top: 8px; margin-bottom: 12px;'><em>See: 
               Saporta 2006.</em></p>
@@ -3252,15 +3689,194 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
               still displayed in the marginals for reference, but do not affect the sort order.</p>
             ")
             
+            # -----------------------------------------------------------------
+            # Section: Attribute Assessment (Krzanowski 1993)
+            # -----------------------------------------------------------------
+            html <- paste0(html, "
+              <h3 style='color: #2874A6; margin-top: 1.5em;'>Attribute Assessment (Krzanowski, 1993)</h3>
+              
+              <p>The attribute assessment facility identifies which column variables (attributes) contribute 
+              most to the row configuration in a correspondence analysis. This is particularly useful when 
+              analysing large tables where some columns may add little information to the ordination of rows.</p>
+              
+              <h4 style='color: #5D6D7E; margin-top: 1em;'>Procrustes-Based Influence Measure</h4>
+              
+              <p>The method, developed by Krzanowski (1993), uses Procrustes analysis to measure how much 
+              the row configuration changes when each attribute is removed:</p>
+              
+              <ol style='margin-left: 2em;'>
+                <li>Perform CA on the full contingency table to obtain row principal coordinates <strong>X</strong>.</li>
+                <li>For each column <em>j</em>, remove that column and perform CA on the reduced table to obtain 
+                row coordinates <strong>Y</strong><sub>j</sub>.</li>
+                <li>Use Procrustes rotation to optimally align <strong>Y</strong><sub>j</sub> with <strong>X</strong>, 
+                allowing for translation, rotation, and uniform scaling.</li>
+                <li>Compute the residual sum of squares M\u00b2<sub>j</sub> after alignment.</li>
+              </ol>
+              
+              <p><strong>Interpretation:</strong> A <em>large</em> M\u00b2 indicates that removing attribute <em>j</em> 
+              substantially distorts the row configuration\u2014the attribute is <em>important</em>. A <em>small</em> M\u00b2 
+              indicates the attribute contributes little to distinguishing between rows and could potentially be 
+              dropped without much loss of information.</p>
+              
+              <h4 style='color: #5D6D7E; margin-top: 1em;'>Backward Elimination</h4>
+              
+              <p>The backward elimination procedure iteratively identifies an optimal subset of attributes:</p>
+              
+              <ol style='margin-left: 2em;'>
+                <li>Compute M\u00b2 for all remaining attributes.</li>
+                <li>Remove the attribute with the <em>smallest</em> M\u00b2 (least influential).</li>
+                <li>Recompute all M\u00b2 values for the reduced table.</li>
+                <li>Repeat until only a minimum number of attributes remain.</li>
+              </ol>
+              
+              <p><strong>Elbow detection:</strong> The trajectory of M\u00b2 values typically remains low while 
+              uninformative attributes are removed, then rises sharply when important attributes are eliminated. 
+              The 'elbow' marks the transition point\u2014attributes removed before the elbow contribute minimally; 
+              those after the elbow are essential.</p>
+              
+              <h4 style='color: #5D6D7E; margin-top: 1em;'>Reduced-Data CA Plot</h4>
+              
+              <p>The reduced-data CA plot displays the correspondence analysis with low-influence attributes 
+              either faded or hidden entirely. This allows visual comparison with the full-data symmetric plot 
+              to assess whether the essential structure is preserved with fewer attributes.</p>
+              
+              <ul style='margin-left: 2em;'>
+                <li><strong>Fade:</strong> Low-influence attributes are shown with reduced opacity, allowing 
+                comparison while de-emphasising their contribution.</li>
+                <li><strong>Hide:</strong> Low-influence attributes are omitted entirely; CA is recomputed 
+                on the reduced matrix.</li>
+              </ul>
+              
+              <p><strong>Computational note:</strong> Backward elimination is computationally expensive for 
+              large tables (O(c\u00b2) CA computations for c columns). The single-pass influence ranking is 
+              faster (O(c) computations) and may suffice for initial screening.</p>
+              
+              <p style='font-size: 0.85em; color: #666; margin-top: 8px; margin-bottom: 12px;'><em>See: 
+              Krzanowski 1993.</em></p>
+            ")
+            
             html <- paste0(html, "</div>")
             
             self$results$methodInfo$setContent(html)
         },
         
         # =====================================================================
+        # POPULATE ATTRIBUTE INFLUENCE TABLE
+        # =====================================================================
+        .populateAttrInfluenceTable = function() {
+            
+            N <- private$.contingencyTable
+            if (is.null(N)) return()
+            
+            table <- self$results$attrInfluenceTable
+            
+            # Compute influence ranking
+            influence <- private$.assessAttributeInfluence(N)
+            if (is.null(influence)) {
+                table$setNote("error", 
+                              "Could not compute attribute influence (matrix may be degenerate)",
+                              init = FALSE)
+                return()
+            }
+            
+            # Store for use in plots
+            private$.attrInfluence <- influence
+            
+            # Populate table
+            for (i in 1:nrow(influence)) {
+                table$addRow(rowKey = i, values = list(
+                    rank = influence$rank[i],
+                    attribute = influence$attribute[i],
+                    M2 = if (is.infinite(influence$M2[i])) NA else influence$M2[i],
+                    importance = if (is.infinite(influence$M2[i])) {
+                        "Indispensable"
+                    } else if (i <= 3) {
+                        "High"
+                    } else if (i <= nrow(influence) * 0.5) {
+                        "Moderate"
+                    } else {
+                        "Low"
+                    }
+                ))
+                
+                # Format indispensable rows
+                if (is.infinite(influence$M2[i])) {
+                    table$addFormat(rowKey = i, col = "M2", jmvcore::Cell.NEGATIVE)
+                }
+            }
+            
+            # Add explanatory note
+            ca <- private$.caResult
+            resid_label <- if (!is.null(ca)) ca$resid_label else "Standardised"
+            
+            table$setNote("method", paste0(
+                "Procrustes M\u00b2 based on ", resid_label, " residuals. ",
+                "Higher M\u00b2 = more important (removing distorts row configuration more). ",
+                "Krzanowski (1993)."),
+                init = FALSE)
+        },
+        
+    # =====================================================================
+    # POPULATE BACKWARD ELIMINATION TABLE
+    # =====================================================================
+    .populateAttrEliminationTable = function() {
+        
+        N <- private$.contingencyTable
+        if (is.null(N)) return()
+        
+        table <- self$results$attrEliminationTable
+        
+        # Compute elimination sequence
+        elimination <- private$.assessAttributeElimination(N)
+        if (is.null(elimination) || nrow(elimination) == 0) {
+            table$setNote("error", "Could not perform backward elimination", init = FALSE)
+            return()
+        }
+        
+        # Detect elbow
+        elbow_step <- private$.detectElbow(elimination$M2_at_removal)
+        
+        # Store for use in plots
+        private$.attrElimination <- elimination
+        private$.attrElbowStep <- elbow_step
+        
+        # Populate table
+        for (i in 1:nrow(elimination)) {
+            table$addRow(rowKey = i, values = list(
+                step = elimination$step[i],
+                attribute_removed = elimination$attribute_removed[i],
+                M2_at_removal = elimination$M2_at_removal[i],
+                n_remaining = elimination$n_remaining[i]
+            ))
+            
+            # Highlight elbow row
+            if (i == elbow_step) {
+                table$addFormat(rowKey = i, col = "step", jmvcore::Cell.NEGATIVE)
+            }
+        }
+        
+        # Determine attributes to KEEP (those NOT removed before elbow)
+        all_cols <- colnames(N)
+        cols_dropped <- elimination$attribute_removed[1:min(elbow_step, nrow(elimination))]
+        cols_retained <- setdiff(all_cols, cols_dropped)
+        n_retained <- length(cols_retained)
+        
+        table$setNote("elbow", paste0(
+            "Suggested elbow at step ", elbow_step, 
+            " (retain ", n_retained, " of ", ncol(N), " attributes)."),
+            init = FALSE)
+        
+        table$setNote("retained", paste0(
+            "Suggested to keep: ", paste(cols_retained, collapse = ", ")),
+            init = FALSE)
+    },
+        
+        # =====================================================================
         # PLOT: SCREE
         # =====================================================================
         .plotScree = function(image, ggtheme, theme, ...) {
+            # Refill private fields from image state (needed on export)
+            private$.restoreFromState(image)
             
             if (is.null(private$.caResult)) return(FALSE)
             if (!self$options$showScreePlot) return(FALSE)
@@ -3273,7 +3889,7 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
                 cumulative = ca$inertia_cumulative * 100
             )
             
-            p <- ggplot2::ggplot(scree_df, ggplot2::aes(x = dim))
+            p <- ggplot2::ggplot(scree_df, ggplot2::aes(x = dim)) + ggtheme  # jamovi results theme first; plot-specific tweaks follow
             p <- p + ggplot2::geom_bar(
                 ggplot2::aes(y = percent),
                 stat = "identity",
@@ -3304,7 +3920,7 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
             
             p <- p + ggplot2::theme(
                 panel.background = ggplot2::element_rect(fill = "white", colour = NA),
-                panel.border = ggplot2::element_rect(fill = NA, colour = "grey60", linewidth = 0.5),
+                panel.border = .ctFrameRect(ggtheme), axis.line = ggplot2::element_blank(),
                 panel.grid.major.y = ggplot2::element_line(colour = "grey90"),
                 panel.grid.minor = ggplot2::element_blank(),
                 panel.grid.major.x = ggplot2::element_blank(),
@@ -3321,6 +3937,8 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
         # PLOT: SYMMETRIC CA
         # =====================================================================
         .plotSymmetric = function(image, ggtheme, theme, ...) {
+            # Refill private fields from image state (needed on export)
+            private$.restoreFromState(image)
             
             # Early exit if data not ready
             if (is.null(self$options$rows) || is.null(self$options$cols)) return(FALSE)
@@ -3388,7 +4006,7 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
             title <- paste0("Symmetric CA Plot (", ca$resid_label, " residuals)")
             
             # Build plot
-            p <- ggplot2::ggplot()
+            p <- ggplot2::ggplot() + ggtheme  # jamovi results theme first; plot-specific tweaks follow
             
             # Reference lines
             p <- p + ggplot2::geom_hline(yintercept = 0, linewidth = 0.5, colour = "grey70", linetype = "dashed")
@@ -3407,32 +4025,21 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
                         member_idx <- which(point_df$label %in% members)
                         cluster_colour <- colours[(g - 1) %% length(colours) + 1]
                         
-                        if (length(member_idx) >= 3) {
-                            hull_pts <- point_df[member_idx, c("x", "y")]
-                            hull_order <- grDevices::chull(hull_pts$x, hull_pts$y)
-                            hull_df <- hull_pts[c(hull_order, hull_order[1]), ]
-                            
+                        if (length(member_idx) >= 2) {
+                            # Padded outline: visible even when members almost coincide
+                            padX <- 0.03 * diff(range(point_df$x))
+                            padY <- 0.03 * diff(range(point_df$y))
+                            if (!is.finite(padX) || padX == 0) padX <- 0.02
+                            if (!is.finite(padY) || padY == 0) padY <- 0.02
+                            hull_df <- .ctClusterHull(point_df$x[member_idx], point_df$y[member_idx], padX, padY)
                             p <- p + ggplot2::geom_polygon(
                                 data = hull_df,
                                 ggplot2::aes(x = x, y = y),
                                 fill = cluster_colour,
-                                alpha = 0.15,
+                                alpha = 0.12,
                                 colour = cluster_colour,
                                 linetype = linetype,
-                                linewidth = 0.5
-                            )
-                        } else if (length(member_idx) == 2) {
-                            line_pts <- point_df[member_idx, c("x", "y")]
-                            
-                            p <- p + ggplot2::geom_segment(
-                                data = data.frame(
-                                    x = line_pts$x[1], y = line_pts$y[1],
-                                    xend = line_pts$x[2], yend = line_pts$y[2]
-                                ),
-                                ggplot2::aes(x = x, y = y, xend = xend, yend = yend),
-                                colour = cluster_colour,
-                                linetype = linetype,
-                                linewidth = 0.8
+                                linewidth = 0.6
                             )
                         }
                     }
@@ -3618,7 +4225,7 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
             
             p <- p + ggplot2::theme(
                 panel.background = ggplot2::element_rect(fill = "white", colour = NA),
-                panel.border = ggplot2::element_rect(fill = NA, colour = "grey60", linewidth = 0.5),
+                panel.border = .ctFrameRect(ggtheme), axis.line = ggplot2::element_blank(),
                 panel.grid = ggplot2::element_blank(),
                 axis.title = ggplot2::element_text(size = 10, colour = "grey30"),
                 axis.text = ggplot2::element_text(size = 9, colour = "grey40"),
@@ -3656,11 +4263,17 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
                                        husson = "Husson"
                 )
                 
+                nRowGroups <- length(private$.srdResultRows$groups)
+                nColGroups <- length(private$.srdResultCols$groups)
                 if (showRowPoints && (clusterTarget == "rows" || clusterTarget == "both")) {
-                    cluster_parts <- c(cluster_parts, paste0("Dashed red = Row clusters (", method_label, ")"))
+                    cluster_parts <- c(cluster_parts, if (nRowGroups > 0)
+                        paste0("Dashed red = Row clusters (", method_label, ")") else
+                        paste0("Row clusters (", method_label, "): none, all categories distinct"))
                 }
                 if (showColPoints && (clusterTarget == "cols" || clusterTarget == "both")) {
-                    cluster_parts <- c(cluster_parts, paste0("Dotted blue = Column clusters (", method_label, ")"))
+                    cluster_parts <- c(cluster_parts, if (nColGroups > 0)
+                        paste0("Dotted blue = Column clusters (", method_label, ")") else
+                        paste0("Column clusters (", method_label, "): none, all categories distinct"))
                 }
                 if (length(cluster_parts) > 0) {
                     caption_text <- paste0(caption_text, "\n", paste(cluster_parts, collapse = "; "))
@@ -3686,6 +4299,8 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
         # PLOT: GEOMETRIC INTERPRETATION
         # =====================================================================
         .plotGeometric = function(image, ggtheme, theme, ...) {
+            # Refill private fields from image state (needed on export)
+            private$.restoreFromState(image)
             
             if (is.null(private$.caResult)) return(FALSE)
             if (!self$options$showGeometricPlot) return(FALSE)
@@ -3796,10 +4411,10 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
             # Axis labels
             xlab <- sprintf("Dimension %d (%.1f%%)", dim1, ca$inertia_proportion[dim1] * 100)
             ylab <- sprintf("Dimension %d (%.1f%%)", dim2, ca$inertia_proportion[dim2] * 100)
-            title <- paste0("Geometric Interpretation (ref: ", refCategory, ")")
+            title <- paste0("Geometric Interpretation CA Plot (ref: ", refCategory, ")")
             
             # Build plot
-            p <- ggplot2::ggplot()
+            p <- ggplot2::ggplot() + ggtheme  # jamovi results theme first; plot-specific tweaks follow
             
             # Reference lines (axes)
             p <- p + ggplot2::geom_hline(yintercept = 0, linewidth = 0.3, colour = "grey70", linetype = "dashed")
@@ -3901,7 +4516,7 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
             p <- p + ggplot2::labs(title = title, x = xlab, y = ylab)
             p <- p + ggplot2::theme(
                 panel.background = ggplot2::element_rect(fill = "white", colour = NA),
-                panel.border = ggplot2::element_rect(fill = NA, colour = "grey60", linewidth = 0.5),
+                panel.border = .ctFrameRect(ggtheme), axis.line = ggplot2::element_blank(),
                 panel.grid = ggplot2::element_blank(),
                 axis.title = ggplot2::element_text(size = 10, colour = "grey30"),
                 axis.text = ggplot2::element_text(size = 9, colour = "grey40"),
@@ -3931,6 +4546,8 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
         # PLOT: CONTRIBUTION BIPLOT
         # =====================================================================
         .plotContribBiplot = function(image, ggtheme, theme, ...) {
+            # Refill private fields from image state (needed on export)
+            private$.restoreFromState(image)
             
             if (is.null(private$.caResult)) return(FALSE)
             if (!self$options$showContribPlot) return(FALSE)
@@ -4010,10 +4627,10 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
             # Axis labels
             xlab <- sprintf("Dimension %d (%.1f%%)", dim1, ca$inertia_proportion[dim1] * 100)
             ylab <- sprintf("Dimension %d (%.1f%%)", dim2, ca$inertia_proportion[dim2] * 100)
-            title <- paste0("Contribution Biplot (", ca$resid_label, " residuals)")
+            title <- paste0("Contribution CA Biplot (", ca$resid_label, " residuals)")
             
             # Build plot
-            p <- ggplot2::ggplot()
+            p <- ggplot2::ggplot() + ggtheme  # jamovi results theme first; plot-specific tweaks follow
             
             # Reference lines
             p <- p + ggplot2::geom_hline(yintercept = 0, linewidth = 0.5, colour = "grey70", linetype = "dashed")
@@ -4029,34 +4646,21 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
                     member_idx <- which(interp_df$label %in% members)
                     cluster_colour <- cluster_colours[(g - 1) %% length(cluster_colours) + 1]
                     
-                    if (length(member_idx) >= 3) {
-                        # Draw convex hull polygon for 3+ members
-                        hull_pts <- interp_df[member_idx, c("x", "y")]
-                        hull_order <- grDevices::chull(hull_pts$x, hull_pts$y)
-                        hull_df <- hull_pts[c(hull_order, hull_order[1]), ]
-                        
+                    if (length(member_idx) >= 2) {
+                        # Padded outline: visible even when members almost coincide
+                        padX <- 0.03 * diff(range(interp_df$x))
+                        padY <- 0.03 * diff(range(interp_df$y))
+                        if (!is.finite(padX) || padX == 0) padX <- 0.02
+                        if (!is.finite(padY) || padY == 0) padY <- 0.02
+                        hull_df <- .ctClusterHull(interp_df$x[member_idx], interp_df$y[member_idx], padX, padY)
                         p <- p + ggplot2::geom_polygon(
                             data = hull_df,
                             ggplot2::aes(x = x, y = y),
                             fill = cluster_colour,
-                            alpha = 0.15,
+                            alpha = 0.12,
                             colour = cluster_colour,
                             linetype = "dashed",
-                            linewidth = 0.5
-                        )
-                    } else if (length(member_idx) == 2) {
-                        # Draw connecting line for 2-member clusters
-                        line_pts <- interp_df[member_idx, c("x", "y")]
-                        
-                        p <- p + ggplot2::geom_segment(
-                            data = data.frame(
-                                x = line_pts$x[1], y = line_pts$y[1],
-                                xend = line_pts$x[2], yend = line_pts$y[2]
-                            ),
-                            ggplot2::aes(x = x, y = y, xend = xend, yend = yend),
-                            colour = cluster_colour,
-                            linetype = "dashed",
-                            linewidth = 0.8
+                            linewidth = 0.6
                         )
                     }
                 }
@@ -4191,7 +4795,7 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
             p <- p + ggplot2::labs(title = title, x = xlab, y = ylab)
             p <- p + ggplot2::theme(
                 panel.background = ggplot2::element_rect(fill = "white", colour = NA),
-                panel.border = ggplot2::element_rect(fill = NA, colour = "grey60", linewidth = 0.5),
+                panel.border = .ctFrameRect(ggtheme), axis.line = ggplot2::element_blank(),
                 panel.grid = ggplot2::element_blank(),
                 axis.title = ggplot2::element_text(size = 10, colour = "grey30"),
                 axis.text = ggplot2::element_text(size = 9, colour = "grey40"),
@@ -4206,7 +4810,7 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
             
             # Caption
             caption_text <- paste0(
-                "Blue (\u25cf) = ", focus_label, " categories (solid = above-average contributor)\n",
+                "Blue (\u25cf) = ", focus_label, " categories (darker outline = above-average contributor)\n",
                 "Red (\u25b2) = ", interp_label, " categories"
             )
             if (showClusters) {
@@ -4223,6 +4827,11 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
                                            husson = "Husson"
                     )
                     caption_text <- paste0(caption_text, "\nDashed regions = ", method_label, " clusters")
+                } else {
+                    method_label <- switch(self$options$clusterMethod,
+                                           srd = "SRD", greenacre = "Greenacre", husson = "Husson")
+                    caption_text <- paste0(caption_text, "\nClusters (", method_label,
+                                           "): none, all categories distinct")
                 }
             }
             
@@ -4239,6 +4848,8 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
         # PLOT: OVERDISPERSION DIAGNOSTIC
         # =====================================================================
         .plotOverdispersion = function(image, ggtheme, theme, ...) {
+            # Refill private fields from image state (needed on export)
+            private$.restoreFromState(image)
             
             if (is.null(private$.contingencyTable)) return(FALSE)
             if (!self$options$showOverdispersionPlot) return(FALSE)
@@ -4278,7 +4889,7 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
                 stringsAsFactors = FALSE
             )
             
-            p <- ggplot2::ggplot(plot_df, ggplot2::aes(x = sd_indep, y = pearson_resid))
+            p <- ggplot2::ggplot(plot_df, ggplot2::aes(x = sd_indep, y = pearson_resid)) + ggtheme  # jamovi results theme first; plot-specific tweaks follow
             
             p <- p + ggplot2::geom_hline(yintercept = 0, linewidth = 0.5, colour = "grey60", linetype = "dashed")
             
@@ -4296,7 +4907,7 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
             
             p <- p + ggplot2::theme(
                 panel.background = ggplot2::element_rect(fill = "white", colour = NA),
-                panel.border = ggplot2::element_rect(fill = NA, colour = "grey60", linewidth = 0.5),
+                panel.border = .ctFrameRect(ggtheme), axis.line = ggplot2::element_blank(),
                 panel.grid.major = ggplot2::element_line(colour = "grey90"),
                 panel.grid.minor = ggplot2::element_blank(),
                 axis.title = ggplot2::element_text(size = 10, colour = "grey30"),
@@ -4312,5 +4923,454 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
             print(p)
             return(TRUE)
         }
+        
+        ,
+        
+    # =====================================================================
+    # PLOT: ATTRIBUTE INFLUENCE BAR CHART
+    # =====================================================================
+    .plotAttrInfluence = function(image, ggtheme, theme, ...) {
+        # Refill private fields from image state (needed on export)
+        private$.restoreFromState(image)
+        
+        if (!self$options$showAttrInfluencePlot) return(FALSE)
+        if (is.null(private$.attrInfluence)) return(FALSE)
+        
+        N <- private$.contingencyTable
+        
+        # Ensure elimination has been computed for consistent colouring
+        if (is.null(private$.attrElimination) && !is.null(N)) {
+            elimination <- private$.assessAttributeElimination(N)
+            if (!is.null(elimination) && nrow(elimination) > 0) {
+                private$.attrElimination <- elimination
+                private$.attrElbowStep <- private$.detectElbow(elimination$M2_at_removal)
+            }
+        }
+        
+        influence <- private$.attrInfluence
+        
+        # Show ALL categories
+        plot_data <- influence
+        
+        # Cap infinite values for display
+        plot_data$M2_display <- plot_data$M2
+        has_inf <- is.infinite(plot_data$M2_display)
+        if (any(has_inf)) {
+            finite_max <- max(plot_data$M2_display[!has_inf], na.rm = TRUE)
+            plot_data$M2_display[has_inf] <- finite_max * 1.2
+        }
+        
+        # Determine which are low-influence based on elimination elbow
+        low_influence_attrs <- private$.getLowInfluenceAttributes()
+        
+        # Mark categories BEFORE converting to factor
+        plot_data$category <- ifelse(plot_data$attribute %in% low_influence_attrs,
+                                     "Low influence (drop)", "High influence (keep)")
+        
+        # Now convert to factor for correct plot ordering (most important at top)
+        plot_data$attribute <- factor(plot_data$attribute, 
+                                      levels = rev(plot_data$attribute))
+        
+        p <- ggplot2::ggplot(plot_data, ggplot2::aes(x = attribute, y = M2_display, 
+                                                     fill = category)) +
+            ggtheme +
+            ggplot2::geom_col(width = 0.7) +
+            ggplot2::coord_flip() +
+            ggplot2::scale_fill_manual(
+                values = c("High influence (keep)" = "#2171B5", 
+                           "Low influence (drop)" = "#BDBDBD"),
+                name = NULL
+            ) +
+            ggplot2::labs(
+                x = NULL,
+                y = expression(M^2 ~ "(Procrustes residual)"),
+                title = "Attribute Influence on Row Configuration"
+            ) +
+            ggplot2::theme(
+                panel.background = ggplot2::element_rect(fill = "white", colour = NA),
+                panel.border = .ctFrameRect(ggtheme), axis.line = ggplot2::element_blank(),
+                panel.grid.major.x = ggplot2::element_line(colour = "grey90"),
+                panel.grid.minor = ggplot2::element_blank(),
+                panel.grid.major.y = ggplot2::element_blank(),
+                axis.title = ggplot2::element_text(size = 10, colour = "grey30"),
+                axis.text = ggplot2::element_text(size = 8, colour = "grey40"),
+                plot.title = ggplot2::element_text(size = 10, face = "bold", colour = "grey20", hjust = 0.5),
+                legend.position = "bottom",
+                legend.text = ggplot2::element_text(size = 8)
+            )
+        
+        print(p)
+        TRUE
+    },
+        
+    # =====================================================================
+    # PLOT: BACKWARD ELIMINATION TRAJECTORY
+    # =====================================================================
+    .plotAttrElimination = function(image, ggtheme, theme, ...) {
+        # Refill private fields from image state (needed on export)
+        private$.restoreFromState(image)
+        
+        if (!self$options$showAttrEliminationPlot) return(FALSE)
+        if (is.null(private$.attrElimination)) return(FALSE)
+        
+        elimination <- private$.attrElimination
+        elbow_step <- private$.attrElbowStep
+        if (is.null(elbow_step)) elbow_step <- nrow(elimination) %/% 2
+        
+        plot_data <- data.frame(
+            step = elimination$step,
+            M2 = elimination$M2_at_removal,
+            label = elimination$attribute_removed
+        )
+        
+        # Number of attributes retained at elbow
+        n_original <- ncol(private$.contingencyTable)
+        n_retained <- n_original - elbow_step
+        
+        # Calculate y position for annotation (middle of y-range)
+        y_range <- range(plot_data$M2)
+        y_annotation <- y_range[1] + (y_range[2] - y_range[1]) * 0.5
+        
+        p <- ggplot2::ggplot(plot_data, ggplot2::aes(x = step, y = M2)) +
+            ggtheme +
+            ggplot2::geom_line(colour = "#2171B5", linewidth = 0.8) +
+            ggplot2::geom_point(colour = "#2171B5", size = 2) +
+            ggplot2::geom_vline(xintercept = elbow_step, linetype = "dashed", 
+                                colour = "#E41A1C", linewidth = 0.8) +
+            ggplot2::annotate("label", 
+                              x = elbow_step, 
+                              y = y_annotation,
+                              label = paste0("Elbow (retain ", n_retained, ")"),
+                              hjust = 1.1,
+                              colour = "#E41A1C", 
+                              size = 3,
+                              fill = "white",
+                              label.size = 0.3) +
+            ggplot2::labs(
+                x = "Elimination step",
+                y = expression(M^2 ~ "at removal"),
+                title = "Backward Elimination Sequence"
+            ) +
+            ggplot2::theme(
+                panel.background = ggplot2::element_rect(fill = "white", colour = NA),
+                panel.border = .ctFrameRect(ggtheme), axis.line = ggplot2::element_blank(),
+                panel.grid.major = ggplot2::element_line(colour = "grey90"),
+                panel.grid.minor = ggplot2::element_blank(),
+                axis.title = ggplot2::element_text(size = 10, colour = "grey30"),
+                axis.text = ggplot2::element_text(size = 9, colour = "grey40"),
+                plot.title = ggplot2::element_text(size = 10, face = "bold", colour = "grey20", hjust = 0.5),
+                plot.subtitle = ggplot2::element_text(size = 9, colour = "grey40", hjust = 0.5)
+            )
+        
+        print(p)
+        TRUE
+    },
+        
+    # =====================================================================
+    # PLOT: REDUCED-DATA CA PLOT
+    # =====================================================================
+    .plotReducedCA = function(image, ggtheme, theme, ...) {
+        # Refill private fields from image state (needed on export)
+        private$.restoreFromState(image)
+        
+        if (!self$options$showReducedCAPlot) return(FALSE)
+        if (is.null(private$.contingencyTable)) return(FALSE)
+        
+        N <- private$.contingencyTable
+        ca_full <- private$.caResult
+        if (is.null(ca_full)) return(FALSE)
+        
+        # Ensure elimination has been computed (needed for low-influence detection)
+        if (is.null(private$.attrElimination)) {
+            elimination <- private$.assessAttributeElimination(N)
+            if (!is.null(elimination) && nrow(elimination) > 0) {
+                private$.attrElimination <- elimination
+                private$.attrElbowStep <- private$.detectElbow(elimination$M2_at_removal)
+            }
+        }
+        
+        if (is.null(private$.attrElimination) || nrow(private$.attrElimination) == 0) return(FALSE)
+        
+        dim1 <- self$options$dim1
+        dim2 <- self$options$dim2
+        dotSize <- self$options$dotSize
+        labelSize <- self$options$labelSize
+        attrDisplay <- tolower(self$options$reducedPlotAttrDisplay)  # Handle case
+        
+        # Get low-influence attributes
+        low_influence_attrs <- private$.getLowInfluenceAttributes()
+        
+        # For "hide" mode, exclude low-influence columns from the analysis
+        if (attrDisplay == "hide" && length(low_influence_attrs) > 0) {
+            cols_to_keep <- setdiff(colnames(N), low_influence_attrs)
+            if (length(cols_to_keep) < 2) return(FALSE)
+            N_plot <- N[, cols_to_keep, drop = FALSE]
+            use_reduced_ca <- TRUE
+        } else {
+            N_plot <- N
+            use_reduced_ca <- FALSE
+        }
+        
+        # Run CA on the appropriate matrix
+        distance_metric <- self$options$distanceMetric
+        residual_type <- self$options$residualType
+        
+        I <- nrow(N_plot)
+        J <- ncol(N_plot)
+        
+        grand_total <- sum(N_plot)
+        P <- N_plot / grand_total
+        r <- rowSums(P)
+        c <- colSums(P)
+        
+        r_mat <- matrix(r, nrow = I, ncol = J, byrow = FALSE)
+        c_mat <- matrix(c, nrow = I, ncol = J, byrow = TRUE)
+        E <- r_mat * c_mat
+        
+        if (distance_metric == "freemanTukey") {
+            S <- 2 * (sqrt(P) - sqrt(E))
+            resid_label <- "Freeman-Tukey"
+        } else if (residual_type == "adjusted") {
+            S <- private$.computeAdjustedResiduals(P, E, r, c, I, J)
+            resid_label <- "Adjusted standardised"
+        } else {
+            S <- (P - E) / sqrt(E + 1e-16)
+            resid_label <- "Standardised"
+        }
+        
+        svd_result <- tryCatch(svd(S), error = function(e) NULL)
+        if (is.null(svd_result)) return(FALSE)
+        
+        d <- svd_result$d
+        
+        # Starting index: residual matrix is centred, so no trivial axis
+        start_idx <- 1
+        
+        # Get requested dimensions: only min(I, J) - 1 are non-null
+        max_dim <- min(length(d), min(I, J) - 1)
+        if (dim1 > max_dim || dim2 > max_dim) return(FALSE)
+        
+        idx1 <- start_idx + dim1 - 1
+        idx2 <- start_idx + dim2 - 1
+        
+        if (idx1 > length(d) || idx2 > length(d)) return(FALSE)
+        
+        d_use <- d[c(idx1, idx2)]
+        U <- svd_result$u[, c(idx1, idx2), drop = FALSE]
+        V <- svd_result$v[, c(idx1, idx2), drop = FALSE]
+        
+        Dr_inv_sqrt <- diag(1 / sqrt(r))
+        Dc_inv_sqrt <- diag(1 / sqrt(c))
+        
+        row_princ <- Dr_inv_sqrt %*% U %*% diag(d_use, nrow = 2)
+        col_princ <- Dc_inv_sqrt %*% V %*% diag(d_use, nrow = 2)
+        
+        # Prepare data frames
+        row_df <- data.frame(
+            x = row_princ[, 1],
+            y = row_princ[, 2],
+            label = rownames(N_plot),
+            type = "Row",
+            stringsAsFactors = FALSE
+        )
+        
+        col_df <- data.frame(
+            x = col_princ[, 1],
+            y = col_princ[, 2],
+            label = colnames(N_plot),
+            type = "Column",
+            stringsAsFactors = FALSE
+        )
+        
+        # For "fade" mode, mark low-influence columns
+        if (attrDisplay == "fade" && length(low_influence_attrs) > 0) {
+            col_df$influence <- ifelse(col_df$label %in% low_influence_attrs,
+                                       "Low", "High")
+        } else {
+            col_df$influence <- "High"
+        }
+        
+        # Inertia for axis labels
+        eigenvalues_all <- d^2
+        if (start_idx == 2) {
+            total_inertia <- sum(eigenvalues_all[2:length(eigenvalues_all)])
+        } else {
+            total_inertia <- sum(eigenvalues_all)
+        }
+        
+        inertia_pct_1 <- d_use[1]^2 / total_inertia * 100
+        inertia_pct_2 <- d_use[2]^2 / total_inertia * 100
+        
+        xlab <- sprintf("Dimension %d (%.1f%%)", dim1, inertia_pct_1)
+        ylab <- sprintf("Dimension %d (%.1f%%)", dim2, inertia_pct_2)
+        
+        # Title and subtitle
+        n_retained <- ncol(N_plot)
+        n_original <- ncol(N)
+        
+        if (use_reduced_ca) {
+            title <- paste0("Reduced-Data CA Plot (", resid_label, " residuals)")
+            subtitle <- paste0(n_retained, " of ", n_original, " attributes; low-influence hidden")
+        } else {
+            title <- paste0("CA Plot with Attribute Assessment (", resid_label, " residuals)")
+            subtitle <- "Low-influence attributes faded"
+        }
+        
+        # Build plot - matching Symmetric CA Plot style exactly
+        p <- ggplot2::ggplot() + ggtheme  # jamovi results theme first; plot-specific tweaks follow
+        
+        # Reference lines
+        p <- p + ggplot2::geom_hline(yintercept = 0, linewidth = 0.5, 
+                                     colour = "grey70", linetype = "dashed")
+        p <- p + ggplot2::geom_vline(xintercept = 0, linewidth = 0.5, 
+                                     colour = "grey70", linetype = "dashed")
+        
+        # Row points - white-filled circles with red outline (matching symmetric plot)
+        p <- p + ggplot2::geom_point(
+            data = row_df,
+            ggplot2::aes(x = x, y = y),
+            colour = "#CB181D", 
+            fill = "white",
+            size = dotSize, 
+            shape = 21,
+            stroke = 0.95
+        )
+        
+        # Column points (with fading for low-influence if applicable)
+        if (attrDisplay == "fade" && length(low_influence_attrs) > 0) {
+            col_df_high <- col_df[col_df$influence == "High", ]
+            col_df_low <- col_df[col_df$influence == "Low", ]
+            
+            if (nrow(col_df_high) > 0) {
+                p <- p + ggplot2::geom_point(
+                    data = col_df_high,
+                    ggplot2::aes(x = x, y = y),
+                    colour = "#2171B5", 
+                    size = dotSize, 
+                    shape = 17
+                )
+            }
+            
+            if (nrow(col_df_low) > 0) {
+                p <- p + ggplot2::geom_point(
+                    data = col_df_low,
+                    ggplot2::aes(x = x, y = y),
+                    colour = "#9ECAE1",  # lighter blue for faded
+                    size = dotSize, 
+                    shape = 17,
+                    alpha = 0.25
+                )
+            }
+        } else {
+            p <- p + ggplot2::geom_point(
+                data = col_df,
+                ggplot2::aes(x = x, y = y),
+                colour = "#2171B5", 
+                size = dotSize, 
+                shape = 17
+            )
+        }
+        
+        # Row labels
+        p <- p + ggrepel::geom_text_repel(
+            data = row_df,
+            ggplot2::aes(x = x, y = y, label = label),
+            colour = "#CB181D", 
+            size = labelSize,
+            max.overlaps = 30,
+            box.padding = 0.4,
+            point.padding = 0.3,
+            force = 2,
+            force_pull = 0.3,
+            min.segment.length = 0.5,
+            segment.colour = "grey50",
+            segment.size = 0.4,
+            seed = 42
+        )
+        
+        # Column labels (with fading for low-influence if applicable)
+        if (attrDisplay == "fade" && length(low_influence_attrs) > 0) {
+            if (nrow(col_df_high) > 0) {
+                p <- p + ggrepel::geom_text_repel(
+                    data = col_df_high,
+                    ggplot2::aes(x = x, y = y, label = label),
+                    colour = "#2171B5", 
+                    size = labelSize,
+                    max.overlaps = 30,
+                    box.padding = 0.4,
+                    point.padding = 0.3,
+                    force = 2,
+                    force_pull = 0.3,
+                    min.segment.length = 0.5,
+                    segment.colour = "grey50",
+                    segment.size = 0.4,
+                    seed = 42
+                )
+            }
+            
+            if (nrow(col_df_low) > 0) {
+                p <- p + ggrepel::geom_text_repel(
+                    data = col_df_low,
+                    ggplot2::aes(x = x, y = y, label = label),
+                    colour = "#9ECAE1",  # lighter blue for faded labels
+                    size = labelSize * 0.85,
+                    max.overlaps = 20,
+                    box.padding = 0.4,
+                    point.padding = 0.3,
+                    force = 2,
+                    force_pull = 0.3,
+                    min.segment.length = 0.5,
+                    segment.colour = "grey70",
+                    segment.size = 0.3,
+                    seed = 42
+                )
+            }
+        } else {
+            p <- p + ggrepel::geom_text_repel(
+                data = col_df,
+                ggplot2::aes(x = x, y = y, label = label),
+                colour = "#2171B5", 
+                size = labelSize,
+                max.overlaps = 30,
+                box.padding = 0.4,
+                point.padding = 0.3,
+                force = 2,
+                force_pull = 0.3,
+                min.segment.length = 0.5,
+                segment.colour = "grey50",
+                segment.size = 0.4,
+                seed = 42
+            )
+        }
+        
+        # Caption
+        caption_text <- "Red (\u25cb) = Row categories; Blue (\u25b2) = Column categories"
+        if (attrDisplay == "fade" && length(low_influence_attrs) > 0) {
+            caption_text <- paste0(caption_text, "\nFaded = low-influence attributes (below elbow)")
+        }
+        
+        p <- p + ggplot2::labs(title = title, subtitle = subtitle, 
+                               x = xlab, y = ylab, caption = caption_text)
+        
+        # Theme - matching Symmetric CA Plot exactly
+        p <- p + ggplot2::theme(
+            panel.background = ggplot2::element_rect(fill = "white", colour = NA),
+            panel.border = .ctFrameRect(ggtheme), axis.line = ggplot2::element_blank(),
+            panel.grid = ggplot2::element_blank(),
+            axis.title = ggplot2::element_text(size = 10, colour = "grey30"),
+            axis.text = ggplot2::element_text(size = 9, colour = "grey40"),
+            plot.title = ggplot2::element_text(size = 11, face = "bold", colour = "grey20", hjust = 0.5),
+            plot.subtitle = ggplot2::element_text(size = 9, colour = "grey40", hjust = 0.5),
+            plot.caption = ggplot2::element_text(size = 8, colour = "grey50", hjust = 0),
+            legend.position = "none"
+        )
+        
+        if (self$options$equalScale) {
+            p <- p + ggplot2::coord_fixed()
+        }
+        
+        print(p)
+        TRUE
+    }
     )
 )

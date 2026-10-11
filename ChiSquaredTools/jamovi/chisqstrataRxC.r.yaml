@@ -36,6 +36,7 @@ items:
         - strata
         - counts
         - nBootstrap
+        - seed
       columns:
         - name: stratum
           title: 'Table'
@@ -147,6 +148,7 @@ items:
         - strata
         - counts
         - nBootstrap
+        - seed
       columns:
         - name: measure
           title: 'Measure'
@@ -175,6 +177,8 @@ items:
         - cols
         - strata
         - counts
+        - nBootstrap
+        - seed
       columns:
         - name: topic
           title: 'Aspect'
@@ -190,13 +194,13 @@ items:
       width: 700
       height: 400
       renderFun: .forestPlot
-      requiresData: true
       clearWith:
         - rows
         - cols
         - strata
         - counts
         - nBootstrap
+        - seed
 
     - name: trajectoryPlot
       title: V Corrected Trajectory
@@ -205,7 +209,6 @@ items:
       width: 700
       height: 450
       renderFun: .trajectoryPlot
-      requiresData: true
       clearWith:
         - rows
         - cols
@@ -213,6 +216,7 @@ items:
         - counts
         - strataOrdered
         - nBootstrap
+        - seed
 
     - name: diagnosticTree
       title: Diagnostic Decision Path
@@ -221,7 +225,6 @@ items:
       width: 800
       height: 500
       renderFun: .diagnosticTree
-      requiresData: true
       clearWith:
         - rows
         - cols
@@ -237,7 +240,4 @@ items:
         - cols
         - strata
 
-    - name: legendNote
-      title: References
-      type: Html
 ...

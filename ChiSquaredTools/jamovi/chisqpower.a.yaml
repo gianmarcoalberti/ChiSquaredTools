@@ -180,7 +180,7 @@ options:
 
     # Display options
     - name: showRefTable
-      title: Show sample size reference table
+      title: Sample size reference table
       type: Bool
       default: true
       description:
@@ -189,7 +189,7 @@ options:
             required sample sizes across effect sizes and power levels
 
     - name: showPowerCurve
-      title: Show power curve plot
+      title: Power curve plot
       type: Bool
       default: true
       description:
@@ -197,7 +197,7 @@ options:
             TRUE (default) or FALSE, display the power curve visualisation
 
     - name: showESCurve
-      title: Show effect size sensitivity curve
+      title: Effect size sensitivity curve
       type: Bool
       default: false
       description:
@@ -206,7 +206,7 @@ options:
             showing detectable effect across sample sizes
 
     - name: showMethodInfo
-      title: Show method explanation
+      title: Method explanations
       type: Bool
       default: false
       description:

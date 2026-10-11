@@ -1,7 +1,5 @@
 # This file is a generated template, your changes will not be overwritten
 
-#' @importFrom stats chisq.test qnorm pchisq quantile
-#' @importFrom stats medpolish xtabs as.formula
 #' @export
 chisqtestClass <- R6::R6Class(
   "chisqtestClass",
@@ -87,11 +85,14 @@ chisqtestClass <- R6::R6Class(
           superTitle = colVar
         )
       }
+      # Margins (equal to the observed margins by construction)
+      expected$addColumn(name = 'rowtotal', title = 'Total', type = 'number')
       
       # Pre-add rows with placeholders
       for (i in seq_len(I)) {
         expected$addRow(rowKey = i, values = list(rowname = row_levels[i]))
       }
+      expected$addRow(rowKey = 'total', values = list(rowname = 'Total'))
       
       # -----------------------------------------------------------------
       # 4. Pre-build tableCharacteristics (already uses setRow pattern)
@@ -164,17 +165,11 @@ chisqtestClass <- R6::R6Class(
         data[[colVar]] <- as.factor(data[[colVar]])
       }
       
-      # Build contingency table based on data format
-      if (is.null(self$options$counts)) {
-        # Long format: one row per observation
-        contingency_table <- table(data[[rowVar]], data[[colVar]])
-      } else {
-        # Wide format: aggregated data with counts variable
-        countsVar <- self$options$counts
-        formula_str <- paste0("`", countsVar, "` ~ `", rowVar, "` + `", colVar, "`")
-        contingency_table <- stats::xtabs(stats::as.formula(formula_str), data = data)
-        contingency_table <- as.table(contingency_table)
-      }
+      # Build contingency table safely (shared helper in utils.R):
+      # no formula parsing of variable names, double storage, all levels kept
+      contingency_table <- .ctBuildTable(data, c(rowVar, colVar), self$options$counts)
+      .ctRejectTooFewLevels(contingency_table, rowVar, colVar)
+      .ctRejectEmptyMargins(contingency_table, rowVar, colVar)
       
       # Calculate expected frequencies
       n <- sum(contingency_table)
@@ -242,8 +237,17 @@ chisqtestClass <- R6::R6Class(
         for (j in 1:J) {
           row_values[[paste0("col", j)]] <- expected[i, j]
         }
+        row_values[['rowtotal']] <- sum(expected[i, ])
         table$setRow(rowKey = i, values = row_values)
       }
+      
+      # Total row
+      total_values <- list()
+      for (j in 1:J) {
+        total_values[[paste0("col", j)]] <- sum(expected[, j])
+      }
+      total_values[['rowtotal']] <- sum(expected)
+      table$setRow(rowKey = 'total', values = total_values)
     },
     
     .populateTableCharacteristics = function(contingency_table, expected) {
@@ -423,6 +427,10 @@ chisqtestClass <- R6::R6Class(
           perm_stats <- private$.permStats
           B_extreme <- sum(perm_stats >= chisq_stat)
           p_perm <- (B_extreme + 1) / (length(perm_stats) + 1)
+          # States saved by older versions lack the observed statistic
+          if (is.null(permImage$state$observed))
+            permImage$setState(list(perm_stats = perm_stats, p_perm = p_perm,
+                                    observed = chisq_stat))
         } else {
           # No cache - run expensive computation
           set.seed(self$options$seed)
@@ -448,7 +456,8 @@ chisqtestClass <- R6::R6Class(
           p_perm <- (B_extreme + 1) / (B + 1)
           
           private$.permStats <- perm_stats
-          permImage$setState(list(perm_stats = perm_stats, p_perm = p_perm))
+          permImage$setState(list(perm_stats = perm_stats, p_perm = p_perm,
+                                  observed = chisq_stat))
         }
         
         table$setRow(rowKey = 'permutation', values = list(
@@ -469,6 +478,10 @@ chisqtestClass <- R6::R6Class(
           mc_stats <- private$.mcStats
           B_extreme <- sum(mc_stats >= chisq_stat)
           p_mc <- (B_extreme + 1) / (length(mc_stats) + 1)
+          # States saved by older versions lack the observed statistic
+          if (is.null(mcImage$state$observed))
+            mcImage$setState(list(mc_stats = mc_stats, p_mc = p_mc,
+                                  observed = chisq_stat))
         } else {
           # No cache - run expensive computation
           set.seed(self$options$seed)
@@ -479,14 +492,14 @@ chisqtestClass <- R6::R6Class(
           row_probs <- rowSums(observed) / n
           col_probs <- colSums(observed) / n
           
+          # Under independence each case falls in cell (i, j) with probability
+          # row_prob[i] * col_prob[j]; drawing n cases one at a time is
+          # equivalent to one multinomial draw, which is far faster for large n
+          cell_probs <- as.vector(outer(row_probs, col_probs))
+          
           for (b in 1:B) {
-            mc_table <- matrix(0, nrow = nrow(observed), ncol = ncol(observed))
-            
-            for (i in 1:n) {
-              row_idx <- sample(1:nrow(observed), size = 1, prob = row_probs)
-              col_idx <- sample(1:ncol(observed), size = 1, prob = col_probs)
-              mc_table[row_idx, col_idx] <- mc_table[row_idx, col_idx] + 1
-            }
+            mc_table <- matrix(stats::rmultinom(1, round(n), cell_probs),
+                               nrow = nrow(observed), ncol = ncol(observed))
             
             mc_row_totals <- rowSums(mc_table)
             mc_col_totals <- colSums(mc_table)
@@ -504,7 +517,8 @@ chisqtestClass <- R6::R6Class(
           p_mc <- (B_extreme + 1) / (B + 1)
           
           private$.mcStats <- mc_stats
-          mcImage$setState(list(mc_stats = mc_stats, p_mc = p_mc))
+          mcImage$setState(list(mc_stats = mc_stats, p_mc = p_mc,
+                                observed = chisq_stat))
         }
         
         table$setRow(rowKey = 'montecarlo', values = list(
@@ -564,21 +578,29 @@ chisqtestClass <- R6::R6Class(
       }
       
       # Add M test note if M test is selected
-      table$setNote(
-        key = "mtest_note",
-        note = "M test (Fuchs & Kenett 1980) may have higher power when association is driven by one or a few outlying cells.",
-        init = FALSE
-      )
+      if (self$options$mTest) {
+        table$setNote(
+          key = "mtest_note",
+          note = "M test (Fuchs & Kenett 1980) may have higher power when association is driven by one or a few outlying cells.",
+          init = FALSE
+        )
+      } else {
+        # Remove a note left from an earlier run with the M test ticked
+        # (the table is not cleared when only this option changes)
+        table$setNote(key = "mtest_note", note = NULL, init = FALSE)
+      }
     },
     
     .plotPermDist = function(image, ...) {
       
-      if (is.null(private$.permStats)) {
+      # Read from the image state (private fields are NULL on export)
+      st <- image$state
+      if (is.null(st) || is.null(st$perm_stats) || is.null(st$observed)) {
         return(FALSE)
       }
       
-      perm_stats <- private$.permStats
-      observed_chisq <- private$.observedChiSq
+      perm_stats <- st$perm_stats
+      observed_chisq <- st$observed
       
       # Create histogram
       hist_data <- hist(perm_stats, plot = FALSE, breaks = 30)
@@ -681,12 +703,14 @@ chisqtestClass <- R6::R6Class(
     
     .plotMCDist = function(image, ...) {
       
-      if (is.null(private$.mcStats)) {
+      # Read from the image state (private fields are NULL on export)
+      st <- image$state
+      if (is.null(st) || is.null(st$mc_stats) || is.null(st$observed)) {
         return(FALSE)
       }
       
-      mc_stats <- private$.mcStats
-      observed_chisq <- private$.observedChiSq
+      mc_stats <- st$mc_stats
+      observed_chisq <- st$observed
       
       # Create histogram
       hist_data <- hist(mc_stats, plot = FALSE, breaks = 30)
@@ -868,7 +892,7 @@ chisqtestClass <- R6::R6Class(
                        "at least as extreme as the observed statistic. P-values are computed using the Phipson & Smyth 2010 method, ",
                        "ensuring accurate Type I error control and avoiding zero p-values.</p>")
         html <- paste0(html, "<p style='margin-bottom: 12px;'><strong>When to use:</strong> Monte Carlo tests are particularly useful for sparse tables ",
-                       "or when cell counts are very small (minimum expected < 1), providing exact p-values without relying on ",
+                       "or when cell counts are very small (minimum expected < 1), providing simulation-based p-values (approximations whose precision grows with the number of replicates) without relying on ",
                        "asymptotic approximations.</p>")
         html <- paste0(html, "<p style='font-size: 0.85em; color: #666; margin-top: 8px; margin-bottom: 12px;'><em>See: Beh & Lombardo 2014: 62-64; ",
                        "Howell 2011; Utts 2014; Lin et al. 2015; Phipson & Smyth 2010.</em></p>")

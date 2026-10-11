@@ -10,12 +10,12 @@ description:
         Comprehensive measures of categorical association organised by statistical foundation.
         
         Provides:
-        - Chi-square-based measures (Phi, Cramér's V, Cohen's w, W-hat, etc.)
+        - Chi-squared-based measures (Phi, Cramér's V, Cohen's w, W-hat, etc.)
         - Margin-free measures (Yule's Q, Y, Odds Ratios)
         - PRE measures (Goodman-Kruskal Lambda and Tau)
         - Confidence intervals where available
         - Effect size interpretation with table-specific thresholds
-        - Chi-square-maximising table
+        - Chi-squared-maximising table
         - Standardised contingency table
         
         Effect sizes are assessed using Cohen (1988) thresholds adjusted for 
@@ -32,10 +32,10 @@ description:
             
             chisqassoc(
                 data = titanic_expanded,
-                rows = 'Class',
+                rows = 'Sex',
                 cols = 'Survived',
                 cramersV = TRUE,
-                yulesQ = TRUE,
+                marginFree = TRUE,
                 gkLambda = TRUE
             )
 
@@ -328,15 +328,15 @@ options:
 
     # Display options (will form separate LayoutBox automatically)
     - name: showChisqMax
-      title: Show chi-squared-maximising table
+      title: Chi-squared-maximising table
       type: Bool
       default: false
       description:
           R: >
-            TRUE or FALSE (default), display the chi-square-maximising table
+            TRUE or FALSE (default), display the chi-squared-maximising table
 
     - name: showStandardised
-      title: Show standardised table
+      title: Standardised table
       type: Bool
       default: false
       description:
@@ -344,15 +344,15 @@ options:
             TRUE or FALSE (default), display the standardised contingency table
 
     - name: showThresholds
-      title: Show effect size threshold table
+      title: Effect size threshold table
       type: Bool
-      default: false
+      default: true
       description:
           R: >
-            TRUE or FALSE (default), display effect size interpretation thresholds
+            TRUE (default) or FALSE, display effect size interpretation thresholds
 
     - name: showMethodInfo
-      title: Show detailed method explanations
+      title: Method explanations
       type: Bool
       default: false
       description:

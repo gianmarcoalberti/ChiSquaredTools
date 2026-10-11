@@ -307,7 +307,8 @@ chisqstrata2x2Results <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Cl
                     "azen2021",
                     "breslowday1980",
                     "pagano2018",
-                    "sheskin2011")))
+                    "sheskin2011",
+                    "woolf1955")))
             self$add(jmvcore::Table$new(
                 options=options,
                 name="interpretationTable",
@@ -336,7 +337,6 @@ chisqstrata2x2Results <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Cl
                 width=700,
                 height=550,
                 renderFun=".forestPlot",
-                requiresData=TRUE,
                 clearWith=list(
                     "rows",
                     "cols",
@@ -352,7 +352,6 @@ chisqstrata2x2Results <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Cl
                 width=700,
                 height=450,
                 renderFun=".trajectoryPlot",
-                requiresData=TRUE,
                 clearWith=list(
                     "rows",
                     "cols",
@@ -410,7 +409,7 @@ chisqstrata2x2Base <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class
 #' - Stratum-specific odds ratios with 95\% confidence intervals
 #' - Chi-squared tests for each partial table and the marginal table
 #' - Cochran-Mantel-Haenszel (CMH) test for conditional independence
-#' - Mantel-Haenszel (MH) test for homogeneity of odds ratios
+#' - Woolf's test for homogeneity of odds ratios
 #' - Breslow-Day-Tarone (BDT) test for homogeneity of odds ratios
 #' 
 #' The analysis provides automated interpretation based on four diagnostic
@@ -436,7 +435,7 @@ chisqstrata2x2Base <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class
 #'               61, 25, 75, 139, 94, 106)
 #' )
 #'
-#' ChiSquaredTools::chisqstrata(
+#' ChiSquaredTools::chisqstrata2x2(
 #'     data = titanic_df,
 #'     rows = 'Survival',
 #'     cols = 'Gender',

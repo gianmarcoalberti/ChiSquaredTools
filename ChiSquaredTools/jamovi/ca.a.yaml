@@ -21,7 +21,7 @@ description:
             data('HairEyeColor')
             dat <- as.data.frame(HairEyeColor)
             
-            corrAnalysis::ca(
+            ChiSquaredTools::ca(
                 data = dat,
                 rows = 'Hair',
                 cols = 'Eye',
@@ -146,7 +146,7 @@ options:
           and the dimension-defining categories.
 
     - name: showSRDTable
-      title: Show clusters
+      title: Clusters table
       type: Bool
       default: false
       description: >
@@ -243,7 +243,8 @@ options:
       max: 20
       default: 2
       description: >
-          Number of CA dimensions to extract. Default is 2.
+          Number of CA dimensions to extract (default 2). A table can have at
+          most min(rows, columns) − 1 dimensions; larger requests are capped.
 
     - name: dim1
       title: Dimension for X-axis
@@ -267,7 +268,7 @@ options:
     # SYMMETRIC CA PLOT
     # ==========================================================================
     - name: showSymmetricPlot
-      title: Show symmetric CA plot
+      title: Symmetric CA plot
       type: Bool
       default: true
       description: >
@@ -275,7 +276,7 @@ options:
           categories in principal coordinates.
 
     - name: symmetricShowClusters
-      title: Show clusters
+      title: Cluster outlines
       type: Bool
       default: false
       description: >
@@ -332,7 +333,7 @@ options:
           faded points have low quality and should be interpreted cautiously.
           
     - name: symmetricShowPoints
-      title: Show points
+      title: Points displayed
       type: List
       options:
         - name: both
@@ -351,7 +352,7 @@ options:
     # GEOMETRIC INTERPRETATION PLOT
     # ==========================================================================
     - name: showGeometricPlot
-      title: Show geometric interpretation plot
+      title: Geometric interpretation plot
       type: Bool
       default: false
       description: >
@@ -394,7 +395,7 @@ options:
     # CONTRIBUTION BIPLOT
     # ==========================================================================
     - name: showContribPlot
-      title: Show contribution biplot
+      title: Contribution biplot
       type: Bool
       default: false
       description: >
@@ -415,7 +416,7 @@ options:
           relative to these dimensions.
 
     - name: contribShowClusters
-      title: Show clusters
+      title: Cluster outlines
       type: Bool
       default: false
       description: >
@@ -440,7 +441,7 @@ options:
     # PLOT APPEARANCE (shared)
     # ==========================================================================
     - name: showScreePlot
-      title: Show scree plot
+      title: Scree plot
       type: Bool
       default: false
       description: >
@@ -497,6 +498,68 @@ options:
           with statistically indistinguishable profiles (p > α) are grouped.
 
     # ==========================================================================
+    # ATTRIBUTE ASSESSMENT (Krzanowski 1993)
+    # ==========================================================================
+    - name: showAttrInfluence
+      title: Attribute influence ranking
+      type: Bool
+      default: false
+      description: >
+          Compute Procrustes-based influence measures for each attribute (column).
+          Higher M² indicates the attribute is more important for preserving
+          the row configuration. Based on Krzanowski (1993).
+
+    - name: showAttrInfluencePlot
+      title: Influence bar chart
+      type: Bool
+      default: false
+      description: >
+          Display bar chart of attribute influence measures, ranked from
+          most to least important.
+
+    - name: showAttrElimination
+      title: Backward elimination sequence
+      type: Bool
+      default: false
+      description: >
+          Perform backward elimination to identify an optimal subset of
+          attributes. At each step, the least influential attribute is removed
+          and all influence measures are recomputed. Warning: computationally
+          expensive for tables with many columns.
+
+    - name: showAttrEliminationPlot
+      title: Elimination trajectory plot
+      type: Bool
+      default: false
+      description: >
+          Display the M² trajectory during backward elimination, with
+          automatic elbow detection marking where further removals begin
+          to substantially distort the row configuration.
+
+    - name: showReducedCAPlot
+      title: Reduced-data plot
+      type: Bool
+      default: false
+      description: >
+          Display a symmetric CA plot using only the attributes retained
+          after elbow-based selection. Allows visual comparison with the
+          full-data CA plot.
+
+    - name: reducedPlotAttrDisplay
+      title: Low-influence attribute display
+      type: List
+      options:
+        - name: fade
+          title: Fade
+        - name: hide
+          title: Hide
+      default: fade
+      description: >
+          How to display low-influence attributes (those below the elbow)
+          on the reduced-data CA plot. 'Fade' renders them with reduced
+          opacity; 'Hide' removes them entirely.
+
+    # ==========================================================================
     # DIAGNOSTICS
     # ==========================================================================
     - name: showOverdispersionPlot
@@ -513,7 +576,7 @@ options:
     # METHOD INFORMATION
     # ==========================================================================
     - name: showMethodInfo
-      title: Show detailed method explanations
+      title: Method explanations
       type: Bool
       default: false
       description: >

@@ -1,7 +1,5 @@
 # This file is a generated template, your changes will not be overwritten
 
-#' @importFrom stats chisq.test mantelhaen.test pchisq xtabs as.formula glm poisson anova quantile
-#' @importFrom ggplot2 ggplot aes geom_point geom_errorbarh geom_hline geom_vline geom_segment geom_rect geom_text geom_line geom_ribbon labs theme_minimal theme element_text element_blank scale_x_continuous scale_y_discrete scale_y_continuous scale_color_manual scale_shape_manual coord_cartesian annotate
 #' @export
 chisqstrataRxCClass <- R6::R6Class(
   "chisqstrataRxCClass",
@@ -268,36 +266,9 @@ chisqstrataRxCClass <- R6::R6Class(
       # 1b. Check if this is a display-only option change
       # ═══════════════════════════════════════════════════════════════════════════
       
-      # Display-only options that should not trigger recomputation
-      displayOnlyOptions <- c("showMethodInfo", "showForestPlot", "showDiagnosticTree", 
-                              "showTrajectoryPlot")
-      
-      # Create signature of data-affecting options only
-      dataSignature <- paste(
-        self$options$rows,
-        self$options$cols, 
-        self$options$strata,
-        self$options$counts,
-        self$options$nBootstrap,
-        self$options$strataOrdered,
-        sep = "|"
-      )
-      
-      # If we have cached results AND the data signature matches, 
-      # only update display elements without repopulating tables
-      if (!is.null(private$.cachedDataSignature) && 
-          private$.cachedDataSignature == dataSignature) {
-        
-        # Just update display-only elements
-        if (self$options$showMethodInfo) {
-          private$.populateMethodInfo()
-        }
-        
-        # Plots will re-render from their existing state automatically
-        # via their renderFun when visibility changes
-        
-        return()
-      }
+      # (A former display-only shortcut was removed: jamovi creates a new
+      # analysis object for every run, so a private cache is never reused,
+      # and an early return here would have left the tables empty.)
       
       rowVar <- self$options$rows
       colVar <- self$options$cols
@@ -450,6 +421,7 @@ chisqstrataRxCClass <- R6::R6Class(
         self$options$strata,
         self$options$counts,
         self$options$nBootstrap,
+        self$options$seed,
         self$options$strataOrdered,
         sep = "|"
       )
@@ -472,6 +444,8 @@ chisqstrataRxCClass <- R6::R6Class(
       } else {
         
         # Compute fresh (first run or data/parameters changed)
+        # Fix the seed so bootstrap CIs are reproducible across re-runs
+        set.seed(self$options$seed)
         vResults <- lapply(listOfTables, private$.calculateVcorrectedAndCI, nBootstrap)
         marginalVResult <- private$.calculateVcorrectedAndCI(marginalTable, nBootstrap)
         
@@ -543,12 +517,17 @@ chisqstrataRxCClass <- R6::R6Class(
       self$results$forestPlot$setState(forestData)
       
       # Diagnostic tree state
-      diagnosticData <- list(
-        cmh_sig = cmhTest$p.value < 0.05,
-        loglin_sig = loglinResult$pvalue < 0.05,
-        scenario = private$.determineScenario(cmhTest$p.value < 0.05, loglinResult$pvalue < 0.05)
-      )
-      self$results$diagnosticTree$setState(diagnosticData)
+      # (no decision path can be drawn if either test could not be computed)
+      if (is.na(cmhTest$p.value) || is.na(loglinResult$pvalue)) {
+        self$results$diagnosticTree$setState(NULL)
+      } else {
+        diagnosticData <- list(
+          cmh_sig = cmhTest$p.value < 0.05,
+          loglin_sig = loglinResult$pvalue < 0.05,
+          scenario = private$.determineScenario(cmhTest$p.value < 0.05, loglinResult$pvalue < 0.05)
+        )
+        self$results$diagnosticTree$setState(diagnosticData)
+      }
       
       # Trajectory plot state (only if strata marked as ordered)
       if (self$options$showTrajectoryPlot && self$options$strataOrdered) {
@@ -584,15 +563,12 @@ chisqstrataRxCClass <- R6::R6Class(
     
     .buildStratifiedArray = function(data, rowVar, colVar, strataVar) {
       
-      if (is.null(self$options$counts)) {
-        # Long format: one row per observation
-        fullTable <- table(data[[rowVar]], data[[colVar]], data[[strataVar]])
-      } else {
-        # Wide format: aggregated data with counts variable
-        countsVar <- self$options$counts
-        formula_str <- paste0(countsVar, " ~ ", rowVar, " + ", colVar, " + ", strataVar)
-        fullTable <- stats::xtabs(stats::as.formula(formula_str), data = data)
-      }
+      # Shared helper (utils.R): safe with any variable name, and stores
+      # counts as doubles so that mantelhaen.test() cannot overflow with
+      # large samples (integer products of margins returned NA before)
+      fullTable <- .ctBuildTable(data, c(rowVar, colVar, strataVar),
+                                 self$options$counts)
+      .ctRejectEmptyMargins(fullTable, rowVar, colVar)
       
       # Ensure it is a proper 3D array
       fullTable <- as.array(fullTable)
@@ -651,24 +627,17 @@ chisqstrataRxCClass <- R6::R6Class(
       if (v_corr > 1) v_corr <- 1
       
       # 4. Bootstrap Procedure
-      # Expand table to raw dataframe for proper resampling of observations
-      df_raw <- as.data.frame(as.table(tbl)) 
-      # df_raw columns are: Var1, Var2, Freq. Expand rows:
-      df_expanded <- df_raw[rep(1:nrow(df_raw), df_raw$Freq), c(1, 2)]
+      # Resampling n observations with replacement is equivalent to one
+      # multinomial draw with the observed cell proportions; drawing the
+      # table directly keeps the cost independent of the sample size
+      cell_p <- as.vector(tbl) / n
       
       boot_v_corr <- numeric(nBootstrap)
       
       for (b in 1:nBootstrap) {
-        # A. Resample observations (Row-wise bootstrap)
-        indices <- sample.int(n, n, replace = TRUE)
-        df_boot <- df_expanded[indices, ]
-        
-        # B. Reconstruct Table
-        # We must maintain original dimensions/levels even if some counts drop to 0
-        tbl_boot <- table(
-          factor(df_boot[[1]], levels = rownames(tbl)),
-          factor(df_boot[[2]], levels = colnames(tbl))
-        )
+        # A-B. Resampled table (original dimensions kept; cells may be 0)
+        tbl_boot <- matrix(stats::rmultinom(1, round(n), cell_p),
+                           nrow = nr, ncol = nc, dimnames = dimnames(tbl))
         
         # C. Calculate Bootstrapped Chi-Observed
         # Use suppressWarnings for small cell counts in bootstrap samples
@@ -718,15 +687,10 @@ chisqstrataRxCClass <- R6::R6Class(
       K <- length(listOfTables)
       stratum_totals <- sapply(listOfTables, sum)
       
-      # Pre-expand all partial tables to dataframes to speed up the loop
-      listOfDataFrames <- lapply(listOfTables, function(tbl) {
-        df_raw <- as.data.frame(as.table(tbl))
-        df_expanded <- df_raw[rep(1:nrow(df_raw), df_raw$Freq), c(1, 2)]
-        return(list(
-          data = df_expanded, 
-          r_levels = rownames(tbl), 
-          c_levels = colnames(tbl)
-        ))
+      # Cell proportions of each partial table (stratum sizes stay fixed)
+      listOfProbs <- lapply(listOfTables, function(tbl) {
+        list(p = as.vector(tbl) / sum(tbl), n = sum(tbl),
+             nr = nrow(tbl), nc = ncol(tbl), dn = dimnames(tbl))
       })
       
       boot_weighted <- numeric(nBootstrap)
@@ -735,21 +699,11 @@ chisqstrataRxCClass <- R6::R6Class(
         boot_v_k <- numeric(K)
         
         for (i in 1:K) {
-          # Extract prep info
-          df_curr <- listOfDataFrames[[i]]$data
-          r_lev <- listOfDataFrames[[i]]$r_levels
-          c_lev <- listOfDataFrames[[i]]$c_levels
-          n <- nrow(df_curr)
-          
-          # A. Resample
-          indices <- sample.int(n, n, replace = TRUE)
-          df_boot <- df_curr[indices, ]
-          
-          # B. Form Table
-          tbl_boot <- table(
-            factor(df_boot[[1]], levels = r_lev),
-            factor(df_boot[[2]], levels = c_lev)
-          )
+          # A-B. Resampled partial table: one multinomial draw with the
+          # observed cell proportions (equivalent to resampling cases)
+          pr <- listOfProbs[[i]]
+          tbl_boot <- matrix(stats::rmultinom(1, round(pr$n), pr$p),
+                             nrow = pr$nr, ncol = pr$nc, dimnames = pr$dn)
           
           # C. Chi Obs
           suppressWarnings({
@@ -849,34 +803,38 @@ chisqstrataRxCClass <- R6::R6Class(
       df <- as.data.frame(as.table(array3D))
       names(df) <- c("Row", "Col", "Stratum", "Freq")
       
-      # Fit homogeneous model: Row*Col + Row*Stratum + Col*Stratum
-      # (no three-way interaction)
-      suppressWarnings({
-        model_homo <- stats::glm(Freq ~ Row*Col + Row*Stratum + Col*Stratum,
-                                 data = df, family = stats::poisson())
-        
-        # Fit saturated model: Row*Col*Stratum
-        model_sat <- stats::glm(Freq ~ Row*Col*Stratum,
-                                data = df, family = stats::poisson())
-      })
+      # A failed fit is reported as NaN (never as p = 1, which would
+      # present a failure as evidence of homogeneity)
+      failed <- list(statistic = NaN, df = NaN, pvalue = NaN, failed = TRUE)
       
-      # Likelihood ratio test
-      lrt <- stats::anova(model_homo, model_sat, test = "LRT")
+      lrt <- tryCatch({
+        suppressWarnings({
+          # Homogeneous model: Row*Col + Row*Stratum + Col*Stratum
+          # (no three-way interaction)
+          model_homo <- stats::glm(Freq ~ Row*Col + Row*Stratum + Col*Stratum,
+                                   data = df, family = stats::poisson())
+          # Saturated model: Row*Col*Stratum
+          model_sat <- stats::glm(Freq ~ Row*Col*Stratum,
+                                  data = df, family = stats::poisson())
+        })
+        if (!model_homo$converged || !model_sat$converged) NULL
+        else stats::anova(model_homo, model_sat, test = "LRT")
+      }, error = function(e) NULL)
+      
+      if (is.null(lrt)) return(failed)
       
       # Extract G² statistic (deviance difference)
       G2 <- lrt$Deviance[2]
       df_diff <- lrt$Df[2]
       pvalue <- lrt$`Pr(>Chi)`[2]
       
-      # Safeguard against NA values
-      if (is.na(pvalue)) pvalue <- 1
-      if (is.na(G2)) G2 <- 0
-      if (is.na(df_diff)) df_diff <- 0
+      if (is.na(G2) || is.na(df_diff) || is.na(pvalue)) return(failed)
       
       return(list(
         statistic = G2,
         df = df_diff,
-        pvalue = pvalue
+        pvalue = pvalue,
+        failed = FALSE
       ))
     },
     
@@ -1017,8 +975,9 @@ chisqstrataRxCClass <- R6::R6Class(
       cmhSig <- cmhTest$p.value < 0.05
       if (cmhSig) {
         cmhFootnote <- paste0(
-          "The CMH test is significant, suggesting conditional dependence: ",
-          "the association between the row and column variables is not zero in at least one stratum."
+          "The CMH test is significant, suggesting conditional dependence: there is evidence ",
+          "of association between the row and column variables after controlling for the strata. ",
+          "See the homogeneity test to judge whether the pattern is consistent across strata."
         )
       } else {
         cmhFootnote <- paste0(
@@ -1045,6 +1004,12 @@ chisqstrataRxCClass <- R6::R6Class(
       ))
       
       # Add conditional footnote based on significance
+      if (is.na(loglinResult$pvalue)) {
+        table$setNote('homogeneityInterpretation', paste0(
+          "The log-linear models could not be fitted (for example because of ",
+          "very sparse partial tables), so the homogeneity test is not available."))
+        return()
+      }
       llSig <- loglinResult$pvalue < 0.05
       if (llSig) {
         homogFootnote <- paste0(
@@ -1076,10 +1041,14 @@ chisqstrataRxCClass <- R6::R6Class(
       ))
       
       # Add footnote about interpretation
-      llSig <- loglinResult$pvalue < 0.05
-      cmhSig <- cmhTest$p.value < 0.05
+      llSig <- isTRUE(loglinResult$pvalue < 0.05)
+      cmhSig <- isTRUE(cmhTest$p.value < 0.05)
       
-      if (!cmhSig) {
+      if (is.na(loglinResult$pvalue) || is.na(cmhTest$p.value)) {
+        summaryFootnote <- paste0(
+          "One of the tests could not be computed, so whether this summary ",
+          "is meaningful cannot be judged from the tests.")
+      } else if (!cmhSig) {
         # No conditional association detected
         summaryFootnote <- paste0(
           "No conditional association detected (CMH test not significant). ",
@@ -1428,7 +1397,8 @@ chisqstrataRxCClass <- R6::R6Class(
         <p>For R\u00D7C tables, the test statistic follows a chi-squared distribution with 
         (R\u22121)(C\u22121) degrees of freedom. A significant result indicates that, 
         after controlling for the stratifying variable, there is evidence of association 
-        between the row and column variables in at least one stratum.</p>
+        between the row and column variables (the generalised CMH test is most powerful when the 
+        association follows a similar pattern in each stratum; opposing patterns can cancel out).</p>
         
         <p>Unlike the 2\u00D72 case, the generalised CMH test does not provide a common 
         measure of effect size (such as a common odds ratio). Instead, summary association 
@@ -1845,7 +1815,7 @@ chisqstrataRxCClass <- R6::R6Class(
         # Node labels
         ggplot2::geom_text(data = nodes,
                            ggplot2::aes(x = x, y = y, label = label, color = text_color),
-                           size = 3.5, fontface = "bold", lineheight = 0.9) +
+                           size = 3.1, fontface = "bold", lineheight = 0.9) +
         
         # Manual scales
         ggplot2::scale_color_identity() +
@@ -1857,7 +1827,8 @@ chisqstrataRxCClass <- R6::R6Class(
         
         # Labels
         ggplot2::labs(
-          title = "Diagnostic Decision Path",
+          # (the jamovi image already shows the title)
+          title = NULL,
           subtitle = paste0("Your data: ", treeData$scenario)
         ) +
         

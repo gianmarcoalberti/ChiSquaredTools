@@ -160,6 +160,7 @@ items:
        - breslowday1980
        - pagano2018
        - sheskin2011
+       - woolf1955
 
     - name: interpretationTable
       title: Interpretation Summary
@@ -186,7 +187,6 @@ items:
       width: 700
       height: 550
       renderFun: .forestPlot
-      requiresData: true
       clearWith:
         - rows
         - cols
@@ -202,7 +202,6 @@ items:
       width: 700
       height: 450
       renderFun: .trajectoryPlot
-      requiresData: true
       clearWith:
         - rows
         - cols

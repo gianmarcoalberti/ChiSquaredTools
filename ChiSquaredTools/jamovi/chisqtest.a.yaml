@@ -143,7 +143,7 @@ options:
             random seed for reproducibility (default: 123)
 
     - name: showDistributions
-      title: Show distribution plots
+      title: Distribution plots
       type: Bool
       default: false
       description:
@@ -152,7 +152,7 @@ options:
             and Monte Carlo test statistics
 
     - name: showMethodInfo
-      title: Show detailed method explanations
+      title: Method explanations
       type: Bool
       default: false
       description:

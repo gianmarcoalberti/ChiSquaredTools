@@ -292,36 +292,38 @@ chisqclusterBase <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class(
 #' Contingency Table Row/Column Clustering
 #'
 #' Hierarchical clustering analysis for contingency table rows and columns 
-#' using the Greenacre (2017) method.
+#' using the Greenacre (2017) critical-value method or the Husson et al. 
+#' (2017)
+#' inertia gain ratio.
 #' 
 #' Provides:
 #' - Agglomerative clustering with Ward linkage criterion
-#' - Critical chi-square values for optimal cluster identification
+#' - Critical chi-squared values for optimal cluster identification
 #' - Cluster dendrograms with significance cutoff lines
 #' - Detailed merging sequence statistics
 #' - Identified significant row and column groups
 #' 
-#' The method uses chi-square distance to identify homogeneous groups of rows 
+#' The method uses chi-squared distance to identify homogeneous groups of rows 
 #' (or columns) that can be merged without significantly reducing the table's 
-#' association. Merging continues until the chi-square statistic falls below 
+#' association. Merging continues until the chi-squared statistic falls below 
 #' a critical threshold adjusted for multiple comparisons (Greenacre 2017, 
 #' Exhibit A.1, p.254).
 #' 
 #'
 #' @examples
-#' # Example with contingency table
+#' # Example with aggregated data (one row per cell plus a counts column)
 #' data <- data.frame(
-#'   "16-24" = c(37, 13, 33, 16, 8),
-#'   "25-34" = c(39, 23, 69, 31, 16),
-#'   "35-49" = c(45, 33, 67, 34, 21),
-#'   "50+" = c(64, 38, 56, 22, 35)
+#'   Store = rep(c("A", "B", "C", "D", "E"), times = 4),
+#'   AgeGroup = rep(c("16-24", "25-34", "35-49", "50+"), each = 5),
+#'   Count = c(37, 13, 33, 16, 8,  39, 23, 69, 31, 16,
+#'             45, 33, 67, 34, 21, 64, 38, 56, 22, 35)
 #' )
-#' rownames(data) <- c("A", "B", "C", "D", "E")
 #'
-#' chisqcluster(
+#' ChiSquaredTools::chisqcluster(
 #'     data = data,
-#'     rows = 'Category',
+#'     rows = 'Store',
 #'     cols = 'AgeGroup',
+#'     counts = 'Count',
 #'     plotRowDendro = TRUE,
 #'     plotColDendro = TRUE
 #' )
@@ -341,7 +343,7 @@ chisqclusterBase <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class(
 #' @param showMethodInfo TRUE or FALSE (default), display detailed
 #'   methodological  explanations for the clustering procedure
 #' @param partitionMethod Method for selecting the optimal partition.
-#'   'greenacre' uses  critical chi-square values from Pearson & Hartley (1972)
+#'   'greenacre' uses  critical chi-squared values from Pearson & Hartley (1972)
 #'   to  identify statistically significant groupings. 'inertia' uses  the
 #'   relative drop in between-cluster inertia gain to find  the "elbow" in the
 #'   clustering hierarchy (Husson et al., 2017).

@@ -1,12 +1,12 @@
 ---
 title: Chi-Squared Analysis Tools
 name: ChiSquaredTools
-version: 1.1.0
+version: 1.2.0
 jms: '1.0'
 authors:
   - Gianmarco Alberti
 maintainer: Gianmarco Alberti <gianmarcoalberti@gmail.com>
-date: '2025-12-30'
+date: '2026-10-10'
 type: R
 description: |-
   Comprehensive toolkit for chi-squared analysis of contingency tables.
@@ -27,7 +27,7 @@ description: |-
     Analysis with symmetric CA plot, geometric interpretation plot, and contribution 
     biplot, supporting both Pearson and Freeman-Tukey residuals with optional adjusted 
     standardised residuals; (8) Stratified analysis for 2x2xK tables with 
-    Cochran-Mantel-Haenszel test, Breslow-Day-Tarone homogeneity test, and forest 
+    Cochran-Mantel-Haenszel test, Breslow-Day-Tarone and Woolf homogeneity tests, and forest 
     plots; (9) Stratified analysis for RxCxK tables with generalised CMH test, 
     log-linear homogeneity test, and trajectory plots. Features toggleable method 
     explanations with rationale and usage guidance, automatic significance 
@@ -82,9 +82,13 @@ analyses:
     ns: ChiSquaredTools
     category: analyses
     menuTitle: Row/Column Clustering
-    description: |-
+    description: >-
       Hierarchical clustering analysis for contingency table rows and columns 
-      using the Greenacre (2017) method.
+
+      using the Greenacre (2017) critical-value method or the Husson et al.
+      (2017)
+
+      inertia gain ratio.
     menuGroup: Chi² Tools
   - title: Correspondence Analysis
     name: ca

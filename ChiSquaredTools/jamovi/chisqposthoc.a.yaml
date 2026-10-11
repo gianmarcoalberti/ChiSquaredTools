@@ -114,7 +114,7 @@ options:
       default: true
       description:
           R: >
-            TRUE or FALSE (default: FALSE), compute adjusted standardised residuals
+            TRUE (default) or FALSE, compute adjusted standardised residuals
 
     - name: quetelet
       title: Quetelet Index
@@ -153,7 +153,7 @@ options:
       description:
           R: >
             maximum number of potential outlier cells to test in backwards-stepping
-            procedure (default: 5). Simonoff (1988) suggests 20-30% of cells.
+            procedure (default: 2). Simonoff (1988) suggests 20-30% of cells.
             Higher values increase computation time but do not inflate false
             positive rates due to Bonferroni correction.
 
@@ -231,7 +231,7 @@ options:
       default: 95
       description:
           R: >
-            confidence level as percentage for PEM bootstrap confidence intervals (default: 0.95)
+            confidence level as percentage for PEM bootstrap confidence intervals (default: 95)
 
     - name: bootstrapReps
       title: Bootstrap Replications (for PEM)
@@ -242,7 +242,7 @@ options:
       description:
           R: >
             number of bootstrap replications for PEM confidence intervals
-            (default: 2000)
+            (default: 999)
 
     - name: seed
       title: Random Seed
@@ -255,7 +255,7 @@ options:
             random seed for reproducibility (default: 123)
 
     - name: showPemPlot
-      title: Show PEM forest plot
+      title: PEM forest plot
       type: Bool
       default: false
       description:
@@ -280,7 +280,7 @@ options:
             'all' (default), 'sigOnly', or 'nonsigOnly'
     
     - name: showDepPlot
-      title: Show DEP forest plot
+      title: DEP forest plot
       type: Bool
       default: false
       description:
@@ -289,7 +289,7 @@ options:
             with significance bounds derived from chi-squared critical values
             
     - name: showMethodInfo
-      title: Show detailed method explanations
+      title: Method explanations
       type: Bool
       default: false
       description:

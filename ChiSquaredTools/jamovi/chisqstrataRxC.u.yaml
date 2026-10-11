@@ -47,6 +47,9 @@ children:
           - type: TextBox
             name: nBootstrap
             format: number
+          - type: TextBox
+            name: seed
+            format: number
   
   # --- GROUP: Visual Summaries ---
   - type: LayoutBox

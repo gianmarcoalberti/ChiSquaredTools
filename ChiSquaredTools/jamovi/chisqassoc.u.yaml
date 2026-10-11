@@ -29,218 +29,208 @@ children:
             name: counts
             maxItemCount: 1
             isTarget: true
-  - type: LayoutBox
-    margin: large
+  - type: CollapseBox
+    label: Chi-squared-based Measures
+    collapsed: false
     stretchFactor: 1
     children:
-      - type: Label
-        label: Chi-squared-based Measures
+      - type: LayoutBox
+        stretchFactor: 1
         children:
           - type: LayoutBox
-            stretchFactor: 1
+            cell:
+              column: 0
+              row: 0
             children:
-              - type: LayoutBox
-                cell:
-                  column: 0
-                  row: 0
-                children:
-                  - type: CheckBox
-                    name: phi
-              - type: LayoutBox
-                cell:
-                  column: 1
-                  row: 0
-                children:
-                  - type: CheckBox
-                    name: phiCorrected
-              - type: LayoutBox
-                cell:
-                  column: 0
-                  row: 1
-                children:
-                  - type: CheckBox
-                    name: phiSigned
-              - type: LayoutBox
-                cell:
-                  column: 0
-                  row: 2
-                children:
-                  - type: CheckBox
-                    name: coleC7
-              - type: LayoutBox
-                cell:
-                  column: 0
-                  row: 3
-                children:
-                  - type: CheckBox
-                    name: zysnoPhi
-              - type: LayoutBox
-                cell:
-                  column: 0
-                  row: 4
-                children:
-                  - type: CheckBox
-                    name: contingencyC
-              - type: LayoutBox
-                cell:
-                  column: 1
-                  row: 4
-                children:
-                  - type: CheckBox
-                    name: cAdjusted
-              - type: LayoutBox
-                cell:
-                  column: 1
-                  row: 5
-                children:
-                  - type: CheckBox
-                    name: cCorrected
-              - type: LayoutBox
-                cell:
-                  column: 0
-                  row: 6
-                children:
-                  - type: CheckBox
-                    name: cramersV
-              - type: LayoutBox
-                cell:
-                  column: 1
-                  row: 6
-                children:
-                  - type: CheckBox
-                    name: vCorrected
-              - type: LayoutBox
-                cell:
-                  column: 1
-                  row: 7
-                children:
-                  - type: CheckBox
-                    name: vStandardised
-              - type: LayoutBox
-                cell:
-                  column: 1
-                  row: 8
-                children:
-                  - type: CheckBox
-                    name: vBiasCorrected
-              - type: LayoutBox
-                cell:
-                  column: 0
-                  row: 9
-                children:
-                  - type: CheckBox
-                    name: cohenW
-  - type: LayoutBox
-    margin: large
+              - type: CheckBox
+                name: phi
+          - type: LayoutBox
+            cell:
+              column: 1
+              row: 0
+            children:
+              - type: CheckBox
+                name: phiCorrected
+          - type: LayoutBox
+            cell:
+              column: 0
+              row: 1
+            children:
+              - type: CheckBox
+                name: phiSigned
+          - type: LayoutBox
+            cell:
+              column: 0
+              row: 2
+            children:
+              - type: CheckBox
+                name: coleC7
+          - type: LayoutBox
+            cell:
+              column: 0
+              row: 3
+            children:
+              - type: CheckBox
+                name: zysnoPhi
+          - type: LayoutBox
+            cell:
+              column: 0
+              row: 4
+            children:
+              - type: CheckBox
+                name: contingencyC
+          - type: LayoutBox
+            cell:
+              column: 1
+              row: 4
+            children:
+              - type: CheckBox
+                name: cAdjusted
+          - type: LayoutBox
+            cell:
+              column: 1
+              row: 5
+            children:
+              - type: CheckBox
+                name: cCorrected
+          - type: LayoutBox
+            cell:
+              column: 0
+              row: 6
+            children:
+              - type: CheckBox
+                name: cramersV
+          - type: LayoutBox
+            cell:
+              column: 1
+              row: 6
+            children:
+              - type: CheckBox
+                name: vCorrected
+          - type: LayoutBox
+            cell:
+              column: 1
+              row: 7
+            children:
+              - type: CheckBox
+                name: vStandardised
+          - type: LayoutBox
+            cell:
+              column: 1
+              row: 8
+            children:
+              - type: CheckBox
+                name: vBiasCorrected
+          - type: LayoutBox
+            cell:
+              column: 0
+              row: 9
+            children:
+              - type: CheckBox
+                name: cohenW
+  - type: CollapseBox
+    label: Distance-based Measures
+    collapsed: true
+    stretchFactor: 1
     children:
-      - type: Label
-        label: Distance-based Measures
+      - type: LayoutBox
+        stretchFactor: 1
         children:
           - type: LayoutBox
-            stretchFactor: 1
+            cell:
+              column: 0
+              row: 0
             children:
-              - type: LayoutBox
-                cell:
-                  column: 0
-                  row: 0
-                children:
-                  - type: CheckBox
-                    name: wHat
-              - type: LayoutBox
-                cell:
-                  column: 1
-                  row: 0
-                children:
-                  - type: CheckBox
-                    name: wHatCorrected
-              - type: LayoutBox
-                cell:
-                  column: 0
-                  row: 1
-                children:
-                  - type: CheckBox
-                    name: sakoda
-              - type: LayoutBox
-                cell:
-                  column: 1
-                  row: 1
-                children:
-                  - type: CheckBox
-                    name: sakodaCorrected
-              - type: LayoutBox
-                cell:
-                  column: 2
-                  row: 1
-                children:
-                  - type: CheckBox
-                    name: sakodaLocal
-  - type: LayoutBox
-    margin: large
+              - type: CheckBox
+                name: wHat
+          - type: LayoutBox
+            cell:
+              column: 1
+              row: 0
+            children:
+              - type: CheckBox
+                name: wHatCorrected
+          - type: LayoutBox
+            cell:
+              column: 0
+              row: 1
+            children:
+              - type: CheckBox
+                name: sakoda
+          - type: LayoutBox
+            cell:
+              column: 1
+              row: 1
+            children:
+              - type: CheckBox
+                name: sakodaCorrected
+          - type: LayoutBox
+            cell:
+              column: 2
+              row: 1
+            children:
+              - type: CheckBox
+                name: sakodaLocal
+  - type: CollapseBox
+    label: Margin-free Measures
+    collapsed: true
+    stretchFactor: 1
     children:
-      - type: Label
-        label: Margin-free Measures
+      - type: CheckBox
+        name: marginFree
+      - type: LayoutBox
+        margin: normal
         children:
-          - type: CheckBox
-            name: marginFree
-          - type: LayoutBox
-            margin: normal
-            children:
-              - type: LevelSelector
-                name: rowRef
-                label: Row category of interest (OR, 2×2 only)
-                enable: (marginFree)
-          - type: LayoutBox
-            margin: normal
-            children:
-              - type: LevelSelector
-                name: colRef
-                label: Col. category of interest (OR, 2×2 only)
-                enable: (marginFree)
-  - type: LayoutBox
-    margin: large
+          - type: LevelSelector
+            name: rowRef
+            label: Row category of interest (OR, 2×2 only)
+            enable: (marginFree)
+      - type: LayoutBox
+        margin: normal
+        children:
+          - type: LevelSelector
+            name: colRef
+            label: Col. category of interest (OR, 2×2 only)
+            enable: (marginFree)
+  - type: CollapseBox
+    label: PRE Measures
+    collapsed: true
+    stretchFactor: 1
     children:
-      - type: Label
-        label: PRE Measures
-        children:
-          - type: CheckBox
-            name: gkLambda
-          - type: CheckBox
-            name: gkLambdaCorrected
-          - type: CheckBox
-            name: gkTau
-  - type: LayoutBox
-    margin: large
+      - type: CheckBox
+        name: gkLambda
+      - type: CheckBox
+        name: gkLambdaCorrected
+      - type: CheckBox
+        name: gkTau
+  - type: CollapseBox
+    label: Confidence Intervals and Bootstrap
+    collapsed: true
+    stretchFactor: 1
     children:
       - type: TextBox
         name: confLevel
         format: number
         suffix: '%'
-  - type: LayoutBox
-    margin: large
-    children:
       - type: Label
-        label: Bootstrap Replications (see table note for applicable measures)
+        label: Bootstrap (see table note for applicable measures)
         children:
           - type: TextBox
             name: bootstrapReps
             format: number
-  - type: LayoutBox
-    margin: large
+          - type: TextBox
+            name: seed
+            format: number
+  - type: CollapseBox
+    label: Display Options
+    collapsed: true
+    stretchFactor: 1
     children:
-      - type: TextBox
-        name: seed
-        format: number
-  - type: LayoutBox
-    margin: large
-    children:
-      - type: Label
-        label: Display Options
-        children:
-          - type: CheckBox
-            name: showChisqMax
-          - type: CheckBox
-            name: showStandardised
-          - type: CheckBox
-            name: showThresholds
-          - type: CheckBox
-            name: showMethodInfo
+      - type: CheckBox
+        name: showChisqMax
+      - type: CheckBox
+        name: showStandardised
+      - type: CheckBox
+        name: showThresholds
+      - type: CheckBox
+        name: showMethodInfo

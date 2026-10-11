@@ -1,7 +1,5 @@
 # This file is a generated template, your changes will not be overwritten
 
-#' @importFrom stats pchisq qchisq uniroot
-#' @importFrom jmvcore .
 #' @export
 chisqpowerClass <- R6::R6Class(
   "chisqpowerClass",
@@ -276,6 +274,12 @@ chisqpowerClass <- R6::R6Class(
       # Check if lower bound already exceeds target
       if (powerDiff(lowerN) > 0) {
         n <- lowerN
+      } else if (powerDiff(upperN) < 0) {
+        # Target not reachable within the search interval
+        jmvcore::reject(paste0(
+          "The target power cannot be reached with a sample of up to ",
+          format(upperN, big.mark = ",", scientific = FALSE),
+          " for this effect size. Increase the effect size or lower the target power."))
       } else {
         result <- uniroot(powerDiff, interval = c(lowerN, upperN), tol = 0.001)
         n <- ceiling(result$root)
@@ -297,6 +301,20 @@ chisqpowerClass <- R6::R6Class(
         ncp <- n * w^2
         computedPower <- 1 - pchisq(critChi, df, ncp = ncp)
         return(computedPower - targetPower)
+      }
+      
+      # Power tends to alpha as w tends to 0, so a target power at or
+      # below alpha needs no effect at all
+      if (targetPower <= alpha) {
+        jmvcore::reject(paste0(
+          "The target power (", targetPower, ") must be greater than \u03b1 (",
+          alpha, "); with power \u2264 \u03b1 any effect size, however small, is detectable."))
+      }
+      # Even a very large effect may be undetectable with a tiny sample
+      if (powerDiff(5) < 0) {
+        jmvcore::reject(paste0(
+          "The target power cannot be reached with N = ", n,
+          " even for w = 5. Increase the sample size or lower the target power."))
       }
       
       # Find w using uniroot

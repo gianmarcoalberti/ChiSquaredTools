@@ -81,6 +81,7 @@ Correspondence Analysis (CA) for visualising association structure in contingenc
 - **Interpretive tables**: Dimension definition, dimension summary (poles), correlations with dimensions, and interpretation summary
 - **Diagnostics**: Malinvaud's test for dimensionality, overdispersion diagnostic plot, SRD-based clustering of interpreted categories
 - **Output options**: Inertia decomposition, category profiles, cell contributions, scree plot
+- **Attribute assessment**: Procrustes-based ranking of the columns (attributes) that most shape the row configuration, with backward elimination and a reduced-data CA plot (Krzanowski, 1993)
 
 ### 8. Stratified Analysis (2×2×K)
 
@@ -88,7 +89,7 @@ For 2×2 tables across K strata:
 
 - Cochran-Mantel-Haenszel test for conditional independence
 - Mantel-Haenszel pooled odds ratio with confidence intervals
-- Breslow-Day and Tarone tests for homogeneity of odds ratios
+- Woolf's test and the Breslow-Day test with Tarone's correction for homogeneity of odds ratios
 - Stratum-specific statistics and forest plots
 
 ### 9. Stratified Analysis (R×C×K)

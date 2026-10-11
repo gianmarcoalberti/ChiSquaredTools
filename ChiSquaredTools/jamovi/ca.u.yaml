@@ -358,6 +358,53 @@ children:
             enable: (clusterMethod:srd)
 
   # ============================================================================
+  # ATTRIBUTE ASSESSMENT
+  # ============================================================================
+  - type: CollapseBox
+    label: Attribute Assessment
+    collapsed: true
+    stretchFactor: 1
+    children:
+      - type: Label
+        label: "Identify which attributes (columns) drive the row configuration"
+        children:
+          - type: LayoutBox
+            margin: small
+            stretchFactor: 1
+            children:
+              - type: LayoutBox
+                cell:
+                  column: 0
+                  row: 0
+                stretchFactor: 1
+                children:
+                  - type: CheckBox
+                    name: showAttrInfluence
+                  - type: CheckBox
+                    name: showAttrInfluencePlot
+                    enable: (showAttrInfluence)
+              - type: LayoutBox
+                cell:
+                  column: 1
+                  row: 0
+                stretchFactor: 1
+                children:
+                  - type: CheckBox
+                    name: showAttrElimination
+                  - type: CheckBox
+                    name: showAttrEliminationPlot
+                    enable: (showAttrElimination)
+      - type: Label
+        label: "Reduced-data CA"
+        children:
+          - type: CheckBox
+            name: showReducedCAPlot
+            enable: (showAttrElimination)
+          - type: ComboBox
+            name: reducedPlotAttrDisplay
+            enable: (showReducedCAPlot)
+
+  # ============================================================================
   # PLOT APPEARANCE
   # ============================================================================
   - type: CollapseBox

@@ -289,6 +289,7 @@ chisqposthocResults <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Clas
                 clearWith=list(
                     "rows",
                     "cols",
+                    "counts",
                     "sidakCorrection",
                     "stdres"),
                 columns=list(),
@@ -302,6 +303,7 @@ chisqposthocResults <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Clas
                 clearWith=list(
                     "rows",
                     "cols",
+                    "counts",
                     "sidakCorrection",
                     "momcorrstdres"),
                 columns=list(),
@@ -315,6 +317,7 @@ chisqposthocResults <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Clas
                 clearWith=list(
                     "rows",
                     "cols",
+                    "counts",
                     "sidakCorrection",
                     "adjstdres"),
                 columns=list(),
@@ -328,6 +331,7 @@ chisqposthocResults <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Clas
                 clearWith=list(
                     "rows",
                     "cols",
+                    "counts",
                     "quetelet"),
                 columns=list(),
                 refs=list(
@@ -341,6 +345,7 @@ chisqposthocResults <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Clas
                 clearWith=list(
                     "rows",
                     "cols",
+                    "counts",
                     "ij"),
                 columns=list(),
                 refs=list(
@@ -354,6 +359,7 @@ chisqposthocResults <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Clas
                 clearWith=list(
                     "rows",
                     "cols",
+                    "counts",
                     "bsKmax"),
                 columns=list(),
                 refs=list(
@@ -366,6 +372,7 @@ chisqposthocResults <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Clas
                 clearWith=list(
                     "rows",
                     "cols",
+                    "counts",
                     "bsKmax"),
                 columns=list(
                     list(
@@ -396,8 +403,10 @@ chisqposthocResults <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Clas
                 clearWith=list(
                     "rows",
                     "cols",
+                    "counts",
                     "confLevel",
-                    "bootstrapReps"),
+                    "bootstrapReps",
+                    "seed"),
                 columns=list(),
                 refs=list(
                     "cibois1993",
@@ -411,10 +420,10 @@ chisqposthocResults <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Clas
                 width=700,
                 height=500,
                 renderFun=".pemPlot",
-                requiresData=TRUE,
                 clearWith=list(
                     "rows",
                     "cols",
+                    "counts",
                     "confLevel",
                     "bootstrapReps",
                     "seed",
@@ -427,6 +436,7 @@ chisqposthocResults <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Clas
                 clearWith=list(
                     "rows",
                     "cols",
+                    "counts",
                     "medpolish"),
                 columns=list(),
                 refs=list(
@@ -440,6 +450,7 @@ chisqposthocResults <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Clas
                 clearWith=list(
                     "rows",
                     "cols",
+                    "counts",
                     "adjmedpolish"),
                 columns=list(),
                 refs=list(
@@ -451,7 +462,8 @@ chisqposthocResults <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Clas
                 visible="(gkres)",
                 clearWith=list(
                     "rows",
-                    "cols"),
+                    "cols",
+                    "counts"),
                 columns=list(),
                 refs=list(
                     "kroonenberglombardo1999")))
@@ -462,7 +474,8 @@ chisqposthocResults <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Clas
                 visible="(gkres)",
                 clearWith=list(
                     "rows",
-                    "cols"),
+                    "cols",
+                    "counts"),
                 columns=list(),
                 refs=list(
                     "kroonenberglombardo1999")))
@@ -474,6 +487,7 @@ chisqposthocResults <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Clas
                 clearWith=list(
                     "rows",
                     "cols",
+                    "counts",
                     "depOutcome"),
                 columns=list(
                     list(
@@ -510,10 +524,10 @@ chisqposthocResults <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Clas
                 width=700,
                 height=500,
                 renderFun=".depPlot",
-                requiresData=TRUE,
                 clearWith=list(
                     "rows",
                     "cols",
+                    "counts",
                     "depOutcome")))
             self$add(jmvcore::Html$new(
                 options=options,
@@ -610,8 +624,8 @@ chisqposthocBase <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class(
 #'   residuals
 #' @param momcorrstdres TRUE or FALSE (default: FALSE), compute
 #'   moment-corrected standardised residuals
-#' @param adjstdres TRUE or FALSE (default: FALSE), compute adjusted
-#'   standardised residuals
+#' @param adjstdres TRUE (default) or FALSE, compute adjusted standardised
+#'   residuals
 #' @param quetelet TRUE or FALSE (default: FALSE), compute Quetelet Index
 #' @param ij TRUE or FALSE (default: FALSE), compute IJ association factor
 #' @param bsOutlier TRUE or FALSE (default: FALSE), perform backwards-stepping
@@ -620,7 +634,7 @@ chisqposthocBase <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class(
 #'   protection against masking and swamping effects. Method from Simonoff
 #'   (1988).
 #' @param bsKmax maximum number of potential outlier cells to test in
-#'   backwards-stepping procedure (default: 5). Simonoff (1988) suggests 20-30\%
+#'   backwards-stepping procedure (default: 2). Simonoff (1988) suggests 20-30\%
 #'   of cells. Higher values increase computation time but do not inflate false
 #'   positive rates due to Bonferroni correction.
 #' @param pem TRUE or FALSE (default: FALSE), compute PEM (Percentage of
@@ -646,9 +660,9 @@ chisqposthocBase <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class(
 #'   correction to  standardised, moment-corrected standardised, and adjusted
 #'   standardised residual significance thresholds
 #' @param confLevel confidence level as percentage for PEM bootstrap
-#'   confidence intervals (default: 0.95)
+#'   confidence intervals (default: 95)
 #' @param bootstrapReps number of bootstrap replications for PEM confidence
-#'   intervals (default: 2000)
+#'   intervals (default: 999)
 #' @param seed random seed for reproducibility (default: 123)
 #' @param showPemPlot TRUE or FALSE (default: FALSE), display a diverging bar
 #'   chart of PEM values with bootstrap confidence intervals, sorted by

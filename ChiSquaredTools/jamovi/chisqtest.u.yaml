@@ -31,46 +31,45 @@ children:
             isTarget: true
   
   # --- GROUP: Test Methods ---
-  - type: LayoutBox
-    margin: large
+  - type: CollapseBox
+    label: Test Methods
+    collapsed: false
+    stretchFactor: 1
     children:
-      - type: Label
-        label: Test Methods
-        children:
-          - type: CheckBox
-            name: traditionalTest
-          - type: CheckBox
-            name: n1Test
-          - type: CheckBox
-            name: permTest
-          - type: CheckBox
-            name: monteCarloTest
-          - type: CheckBox
-            name: mTest
+      - type: CheckBox
+        name: traditionalTest
+      - type: CheckBox
+        name: n1Test
+      - type: CheckBox
+        name: permTest
+      - type: CheckBox
+        name: monteCarloTest
+      - type: CheckBox
+        name: mTest
   
-  # --- Computation Parameters ---
-  - type: LayoutBox
-    margin: large
+  # --- Computation Parameters (used by the resampling tests only) ---
+  - type: CollapseBox
+    label: Resampling Settings
+    collapsed: true
+    stretchFactor: 1
     children:
       - type: TextBox
         name: nPerms
         format: number
-  - type: LayoutBox
-    margin: large
-    children:
+        enable: (permTest || monteCarloTest)
       - type: TextBox
         name: seed
         format: number
+        enable: (permTest || monteCarloTest)
   
   # --- GROUP: Display Options ---
-  - type: LayoutBox
-    margin: large
+  - type: CollapseBox
+    label: Display Options
+    collapsed: true
+    stretchFactor: 1
     children:
-      - type: Label
-        label: Display Options
-        children:
-          - type: CheckBox
-            name: showDistributions
-            enable: (permTest || monteCarloTest)
-          - type: CheckBox
-            name: showMethodInfo
+      - type: CheckBox
+        name: showDistributions
+        enable: (permTest || monteCarloTest)
+      - type: CheckBox
+        name: showMethodInfo

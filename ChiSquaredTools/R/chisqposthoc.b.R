@@ -198,17 +198,11 @@ chisqposthocClass <- R6::R6Class(
         data[[colVar]] <- as.factor(data[[colVar]])
       }
       
-      # Build contingency table based on data format
-      if (is.null(self$options$counts)) {
-        # Long format: one row per observation
-        contingency_table <- table(data[[rowVar]], data[[colVar]])
-      } else {
-        # Wide format: aggregated data with counts variable
-        countsVar <- self$options$counts
-        formula_str <- paste0("`", countsVar, "` ~ `", rowVar, "` + `", colVar, "`")
-        contingency_table <- stats::xtabs(stats::as.formula(formula_str), data = data)
-        contingency_table <- as.table(contingency_table)
-      }
+      # Build contingency table safely (shared helper in utils.R):
+      # no formula parsing of variable names, double storage, all levels kept
+      contingency_table <- .ctBuildTable(data, c(rowVar, colVar), self$options$counts)
+      .ctRejectTooFewLevels(contingency_table, rowVar, colVar)
+      .ctRejectEmptyMargins(contingency_table, rowVar, colVar)
       
       # Always populate the crosstab
       private$.populateCrosstab(contingency_table)
@@ -487,11 +481,11 @@ chisqposthocClass <- R6::R6Class(
         alpha_corr <- 1 - (1 - alpha)^(1/k)
         threshold <- qnorm(1 - alpha_corr / 2)
         notice_text <- sprintf(
-          "Moment-corrected residuals adjust for table dimensions. Values > %.3f or < %.3f indicate significant deviation (Šidák-corrected α = %.4f). See Garcia-Perez & Nunez-Anton (2003).",
+          "Moment-corrected residuals adjust for table dimensions. Values > %.3f or < %.3f indicate significant deviation (Šidák-corrected α = %.4f). See García-Pérez & Núñez-Antón (2003).",
           threshold, -threshold, alpha_corr
         )
       } else {
-        notice_text <- "Moment-corrected residuals adjust for table dimensions. Values > 1.96 or < -1.96 indicate significant deviation (α = 0.05). See Garcia-Perez & Nunez-Anton (2003)."
+        notice_text <- "Moment-corrected residuals adjust for table dimensions. Values > 1.96 or < -1.96 indicate significant deviation (α = 0.05). See García-Pérez & Núñez-Antón (2003)."
       }
       
       table$setNote('interp_momcorr', notice_text, init = FALSE)
@@ -614,7 +608,7 @@ chisqposthocClass <- R6::R6Class(
     .addDEPNotice = function() {
       table <- self$results$depTable
       
-      notice_text <- "Here DEP treats rows as independent (predictor) and columns as dependent (outcome). DEP ranges -1 to +1. Positive = outcome more probable; negative = less probable. Significance via chi-squared bounds (α = 0.05). See Gambirasio (2024)."
+      notice_text <- "Here DEP treats rows as independent (predictor) and columns as dependent (outcome). DEP ranges -1 to +1. Positive = outcome more probable; negative = less probable. Significance via chi-squared bounds (α = 0.05). See Gambirasio (2019)."
       
       table$setNote('interp_dep', notice_text, init = FALSE)
     },
@@ -679,7 +673,8 @@ chisqposthocClass <- R6::R6Class(
             cell_text <- ""
           } else {
             # Check if CI excludes zero (significant)
-            ci_excludes_zero <- (ci_lo > 0) || (ci_hi < 0)
+            # isTRUE(): a missing bootstrap bound must not stop the analysis
+            ci_excludes_zero <- isTRUE(ci_lo > 0) || isTRUE(ci_hi < 0)
             
             if (ci_excludes_zero) {
               # Apply red colour to significant values
@@ -1394,7 +1389,7 @@ chisqposthocClass <- R6::R6Class(
                 table$addFormat(
                   rowKey = paste0('row', i),
                   col = paste0('col', j),
-                  format = Cell.NEGATIVE
+                  format = jmvcore::Cell.NEGATIVE
                 )
               }
             }
@@ -1434,7 +1429,7 @@ chisqposthocClass <- R6::R6Class(
           table$addFormat(
             rowKey = i,
             col = 'depValue',
-            format = Cell.NEGATIVE
+            format = jmvcore::Cell.NEGATIVE
           )
         }
       }
@@ -1685,7 +1680,7 @@ chisqposthocClass <- R6::R6Class(
           <h3 style='color: #2874A6; margin-top: 1.5em;'>Standardised Residuals</h3>
           <p>Standardised residuals quantify the departure of each cell's observed count from the count expected under independence, expressed in standard deviation units. The calculation is (<i>observed</i> − <i>expected</i>) / √<i>expected</i>. Under the null hypothesis of independence, these residuals approximately follow a standard normal distribution, which allows threshold-based interpretation using critical values from the normal distribution (typically ±1.96 for α = 0.05).</p>
           
-          <p>The ±1.96 threshold corresponds to a 95% confidence level when examining a single cell in isolation. However, when inspecting multiple cells simultaneously—as is typical in contingency table analysis—the probability of observing at least one false positive increases. The Šidák correction addresses this multiple comparison problem by adjusting the threshold to maintain an overall Type I error rate of 0.05 across all cells. The corrected threshold is calculated as Φ<sup>−1</sup>(1 − α/(2<i>k</i>)), where <i>k</i> is the number of cells and Φ<sup>−1</sup> is the inverse standard normal cumulative distribution function.</p>
+          <p>The ±1.96 threshold corresponds to a 95% confidence level when examining a single cell in isolation. However, when inspecting multiple cells simultaneously—as is typical in contingency table analysis—the probability of observing at least one false positive increases. The Šidák correction addresses this multiple comparison problem by adjusting the threshold to maintain an overall Type I error rate of 0.05 across all cells. The corrected threshold is calculated as Φ<sup>−1</sup>(1 − α<sub>S</sub>/2), with α<sub>S</sub> = 1 − (1 − α)<sup>1/<i>k</i></sup>, where <i>k</i> is the number of cells and Φ<sup>−1</sup> is the inverse standard normal cumulative distribution function.</p>
           
           <p><strong>Key limitation:</strong> Standardised residuals do not have constant variance across cells. Their theoretical variance is always less than or equal to 1, and varies depending on the cell's marginal totals. This heterogeneity can make direct cell-to-cell comparisons misleading, particularly when marginal distributions are unbalanced. For more accurate comparisons across cells with varying marginal totals, consider using adjusted standardised residuals, which explicitly correct for this variance heterogeneity.</p>
         ")

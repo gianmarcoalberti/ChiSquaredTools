@@ -11,6 +11,7 @@ chisqstrataRxCOptions <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Cl
             strata = NULL,
             counts = NULL,
             nBootstrap = 1000,
+            seed = 123,
             showForestPlot = TRUE,
             showDiagnosticTree = TRUE,
             strataOrdered = FALSE,
@@ -58,6 +59,12 @@ chisqstrataRxCOptions <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Cl
                 default=1000,
                 min=100,
                 max=10000)
+            private$..seed <- jmvcore::OptionInteger$new(
+                "seed",
+                seed,
+                min=1,
+                max=999999,
+                default=123)
             private$..showForestPlot <- jmvcore::OptionBool$new(
                 "showForestPlot",
                 showForestPlot,
@@ -84,6 +91,7 @@ chisqstrataRxCOptions <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Cl
             self$.addOption(private$..strata)
             self$.addOption(private$..counts)
             self$.addOption(private$..nBootstrap)
+            self$.addOption(private$..seed)
             self$.addOption(private$..showForestPlot)
             self$.addOption(private$..showDiagnosticTree)
             self$.addOption(private$..strataOrdered)
@@ -96,6 +104,7 @@ chisqstrataRxCOptions <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Cl
         strata = function() private$..strata$value,
         counts = function() private$..counts$value,
         nBootstrap = function() private$..nBootstrap$value,
+        seed = function() private$..seed$value,
         showForestPlot = function() private$..showForestPlot$value,
         showDiagnosticTree = function() private$..showDiagnosticTree$value,
         strataOrdered = function() private$..strataOrdered$value,
@@ -107,6 +116,7 @@ chisqstrataRxCOptions <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Cl
         ..strata = NA,
         ..counts = NA,
         ..nBootstrap = NA,
+        ..seed = NA,
         ..showForestPlot = NA,
         ..showDiagnosticTree = NA,
         ..strataOrdered = NA,
@@ -129,8 +139,7 @@ chisqstrataRxCResults <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Cl
         forestPlot = function() private$.items[["forestPlot"]],
         trajectoryPlot = function() private$.items[["trajectoryPlot"]],
         diagnosticTree = function() private$.items[["diagnosticTree"]],
-        methodInfo = function() private$.items[["methodInfo"]],
-        legendNote = function() private$.items[["legendNote"]]),
+        methodInfo = function() private$.items[["methodInfo"]]),
     private = list(),
     public=list(
         initialize=function(options) {
@@ -170,7 +179,8 @@ chisqstrataRxCResults <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Cl
                     "cols",
                     "strata",
                     "counts",
-                    "nBootstrap"),
+                    "nBootstrap",
+                    "seed"),
                 columns=list(
                     list(
                         `name`="stratum", 
@@ -298,7 +308,8 @@ chisqstrataRxCResults <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Cl
                     "cols",
                     "strata",
                     "counts",
-                    "nBootstrap"),
+                    "nBootstrap",
+                    "seed"),
                 columns=list(
                     list(
                         `name`="measure", 
@@ -330,7 +341,9 @@ chisqstrataRxCResults <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Cl
                     "rows",
                     "cols",
                     "strata",
-                    "counts"),
+                    "counts",
+                    "nBootstrap",
+                    "seed"),
                 columns=list(
                     list(
                         `name`="topic", 
@@ -348,13 +361,13 @@ chisqstrataRxCResults <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Cl
                 width=700,
                 height=400,
                 renderFun=".forestPlot",
-                requiresData=TRUE,
                 clearWith=list(
                     "rows",
                     "cols",
                     "strata",
                     "counts",
-                    "nBootstrap")))
+                    "nBootstrap",
+                    "seed")))
             self$add(jmvcore::Image$new(
                 options=options,
                 name="trajectoryPlot",
@@ -363,14 +376,14 @@ chisqstrataRxCResults <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Cl
                 width=700,
                 height=450,
                 renderFun=".trajectoryPlot",
-                requiresData=TRUE,
                 clearWith=list(
                     "rows",
                     "cols",
                     "strata",
                     "counts",
                     "strataOrdered",
-                    "nBootstrap")))
+                    "nBootstrap",
+                    "seed")))
             self$add(jmvcore::Image$new(
                 options=options,
                 name="diagnosticTree",
@@ -379,7 +392,6 @@ chisqstrataRxCResults <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Cl
                 width=800,
                 height=500,
                 renderFun=".diagnosticTree",
-                requiresData=TRUE,
                 clearWith=list(
                     "rows",
                     "cols",
@@ -393,11 +405,7 @@ chisqstrataRxCResults <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Cl
                 clearWith=list(
                     "rows",
                     "cols",
-                    "strata")))
-            self$add(jmvcore::Html$new(
-                options=options,
-                name="legendNote",
-                title="References"))}))
+                    "strata")))}))
 
 chisqstrataRxCBase <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class(
     "chisqstrataRxCBase",
@@ -477,6 +485,8 @@ chisqstrataRxCBase <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class
 #'   case).
 #' @param nBootstrap number of bootstrap replicates for computing confidence
 #'   intervals of V corrected (default: 1000)
+#' @param seed random seed for the bootstrap, so that confidence intervals are
+#'   reproducible (default: 123)
 #' @param showForestPlot TRUE or FALSE (default: TRUE), display a forest plot
 #'   showing stratum-specific V corrected with 95\% confidence intervals and the
 #'   weighted average.
@@ -504,7 +514,6 @@ chisqstrataRxCBase <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class
 #'   \code{results$trajectoryPlot} \tab \tab \tab \tab \tab an image \cr
 #'   \code{results$diagnosticTree} \tab \tab \tab \tab \tab an image \cr
 #'   \code{results$methodInfo} \tab \tab \tab \tab \tab a html \cr
-#'   \code{results$legendNote} \tab \tab \tab \tab \tab a html \cr
 #' }
 #'
 #' Tables can be converted to data frames with \code{asDF} or \code{\link{as.data.frame}}. For example:
@@ -521,6 +530,7 @@ chisqstrataRxC <- function(
     strata,
     counts,
     nBootstrap = 1000,
+    seed = 123,
     showForestPlot = TRUE,
     showDiagnosticTree = TRUE,
     strataOrdered = FALSE,
@@ -552,6 +562,7 @@ chisqstrataRxC <- function(
         strata = strata,
         counts = counts,
         nBootstrap = nBootstrap,
+        seed = seed,
         showForestPlot = showForestPlot,
         showDiagnosticTree = showDiagnosticTree,
         strataOrdered = strataOrdered,

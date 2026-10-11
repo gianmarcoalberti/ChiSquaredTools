@@ -38,7 +38,7 @@ chisqassocOptions <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class(
             seed = 123,
             showChisqMax = FALSE,
             showStandardised = FALSE,
-            showThresholds = FALSE,
+            showThresholds = TRUE,
             showMethodInfo = FALSE, ...) {
 
             super$initialize(
@@ -193,7 +193,7 @@ chisqassocOptions <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class(
             private$..showThresholds <- jmvcore::OptionBool$new(
                 "showThresholds",
                 showThresholds,
-                default=FALSE)
+                default=TRUE)
             private$..showMethodInfo <- jmvcore::OptionBool$new(
                 "showMethodInfo",
                 showMethodInfo,
@@ -363,7 +363,7 @@ chisqassocResults <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class(
             self$add(jmvcore::Table$new(
                 options=options,
                 name="chisqMaxTable",
-                title="Chi-Square-Maximising Table",
+                title="Chi-Squared-Maximising Table",
                 visible="(showChisqMax)",
                 clearWith=list(
                     "rows",
@@ -395,7 +395,32 @@ chisqassocResults <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class(
                     "alberti2024",
                     "bishop2007",
                     "goodman1979",
-                    "reynolds1977"),
+                    "reynolds1977",
+                    "bergsma2013",
+                    "blaikie2003",
+                    "bonett2007",
+                    "bruner1976",
+                    "buchanan1974",
+                    "cole1949",
+                    "cramer1946",
+                    "cureton1959",
+                    "davenport1991",
+                    "ferguson2009",
+                    "goodman1954",
+                    "goodman1972",
+                    "kendall1961",
+                    "kvalseth2018a",
+                    "kvalseth2018b",
+                    "liu1980",
+                    "mueller1961",
+                    "rasch2011",
+                    "ratliff1982",
+                    "smithson2003",
+                    "voneye2003",
+                    "warrens2008",
+                    "yule1912",
+                    "zysno1997",
+                    "cohen1988"),
                 clearWith=list(
                     "rows",
                     "cols",
@@ -572,6 +597,8 @@ chisqassocResults <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class(
                     "phi",
                     "phiSigned",
                     "phiCorrected",
+                    "coleC7",
+                    "zysnoPhi",
                     "contingencyC",
                     "cAdjusted",
                     "cCorrected",
@@ -585,9 +612,10 @@ chisqassocResults <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class(
                     "sakoda",
                     "sakodaCorrected",
                     "sakodaLocal",
-                    "yulesQ",
-                    "yulesY",
-                    "oddsRatio"),
+                    "marginFree",
+                    "gkLambda",
+                    "gkLambdaCorrected",
+                    "gkTau"),
                 columns=list(
                     list(
                         `name`="measure", 
@@ -620,6 +648,8 @@ chisqassocResults <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class(
                     "phi",
                     "phiSigned",
                     "phiCorrected",
+                    "coleC7",
+                    "zysnoPhi",
                     "contingencyC",
                     "cAdjusted",
                     "cCorrected",
@@ -633,9 +663,7 @@ chisqassocResults <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class(
                     "sakoda",
                     "sakodaCorrected",
                     "sakodaLocal",
-                    "yulesQ",
-                    "yulesY",
-                    "oddsRatio",
+                    "marginFree",
                     "gkLambda",
                     "gkLambdaCorrected",
                     "gkTau")))}))
@@ -667,12 +695,12 @@ chisqassocBase <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class(
 #' foundation.
 #' 
 #' Provides:
-#' - Chi-square-based measures (Phi, Cramér's V, Cohen's w, W-hat, etc.)
+#' - Chi-squared-based measures (Phi, Cramér's V, Cohen's w, W-hat, etc.)
 #' - Margin-free measures (Yule's Q, Y, Odds Ratios)
 #' - PRE measures (Goodman-Kruskal Lambda and Tau)
 #' - Confidence intervals where available
 #' - Effect size interpretation with table-specific thresholds
-#' - Chi-square-maximising table
+#' - Chi-squared-maximising table
 #' - Standardised contingency table
 #' 
 #' Effect sizes are assessed using Cohen (1988) thresholds adjusted for 
@@ -688,10 +716,10 @@ chisqassocBase <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class(
 #'
 #' chisqassoc(
 #'     data = titanic_expanded,
-#'     rows = 'Class',
+#'     rows = 'Sex',
 #'     cols = 'Survived',
 #'     cramersV = TRUE,
-#'     yulesQ = TRUE,
+#'     marginFree = TRUE,
 #'     gkLambda = TRUE
 #' )
 #'
@@ -766,10 +794,10 @@ chisqassocBase <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class(
 #'   Default: 999. See table annotation for details.
 #' @param seed random seed for reproducibility (default: 123)
 #' @param showChisqMax TRUE or FALSE (default), display the
-#'   chi-square-maximising table
+#'   chi-squared-maximising table
 #' @param showStandardised TRUE or FALSE (default), display the standardised
 #'   contingency table
-#' @param showThresholds TRUE or FALSE (default), display effect size
+#' @param showThresholds TRUE (default) or FALSE, display effect size
 #'   interpretation thresholds
 #' @param showMethodInfo TRUE or FALSE (default), display detailed
 #'   methodological explanations for selected measures
@@ -828,7 +856,7 @@ chisqassoc <- function(
     seed = 123,
     showChisqMax = FALSE,
     showStandardised = FALSE,
-    showThresholds = FALSE,
+    showThresholds = TRUE,
     showMethodInfo = FALSE) {
 
     if ( ! requireNamespace("jmvcore", quietly=TRUE))

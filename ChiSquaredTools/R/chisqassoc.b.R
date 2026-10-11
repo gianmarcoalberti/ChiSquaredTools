@@ -68,7 +68,7 @@ chisqassocClass <- R6::R6Class(
             
             # --- Set up chisqMaxTable structure (if enabled) ---
             chisqMaxTab <- self$results$chisqMaxTable
-            chisqMaxTab$setTitle(paste0("Chi-Square-Maximising Table: ", rowVar, " × ", colVar))
+            chisqMaxTab$setTitle(paste0("Chi-Squared-Maximising Table: ", rowVar, " × ", colVar))
             
             chisqMaxTab$addColumn(
                 name = 'rowname',
@@ -81,7 +81,7 @@ chisqassocClass <- R6::R6Class(
                 chisqMaxTab$addColumn(
                     name = paste0("col", j),
                     title = col_levels[j],
-                    type = 'number',
+                    type = 'integer',
                     superTitle = colVar
                 )
             }
@@ -90,7 +90,7 @@ chisqassocClass <- R6::R6Class(
             chisqMaxTab$addColumn(
                 name = 'rowtotal',
                 title = 'Total',
-                type = 'number'
+                type = 'integer'
             )
             
             # Add empty rows including Total row
@@ -345,13 +345,10 @@ chisqassocClass <- R6::R6Class(
                 data[[colVar]] <- as.factor(data[[colVar]])
             }
             
-            if (is.null(countsVar) || countsVar == "") {
-                contingency_table <- table(data[[rowVar]], data[[colVar]])
-            } else {
-                formula_str <- paste0("`", countsVar, "` ~ `", rowVar, "` + `", colVar, "`")
-                contingency_table <- stats::xtabs(stats::as.formula(formula_str), data = data)
-                contingency_table <- as.table(contingency_table)
-            }
+            # Build contingency table safely (shared helper in utils.R)
+            contingency_table <- .ctBuildTable(data, c(rowVar, colVar), countsVar)
+            .ctRejectTooFewLevels(contingency_table, rowVar, colVar)
+            .ctRejectEmptyMargins(contingency_table, rowVar, colVar)
             
             # Populate observed contingency table FIRST
             private$.populateCrosstab(contingency_table, rowVar, colVar)
@@ -377,9 +374,10 @@ chisqassocClass <- R6::R6Class(
             # Calculate max values if:
             # 1. User wants to see the chi-sq max table
             # 2. Any corrected measure is requested
-            # 3. Thresholds table will be shown AND any uncorrected measure needs max scaling
-            needs_max_for_thresholds <- self$options$showThresholds && 
-                (self$options$phi || 
+            # 3. Any uncorrected measure is requested: its effect-size label
+            #    (Tier 2) is scaled by the maximum, whether or not the
+            #    thresholds table is shown
+            needs_max_for_thresholds <- (self$options$phi || 
                      self$options$phiSigned || 
                      self$options$contingencyC || 
                      self$options$cramersV ||
@@ -546,7 +544,7 @@ chisqassocClass <- R6::R6Class(
                         
                         if (is_unilateral) {
                             warning_text <- paste0(
-                                "Note: The input table exhibits non-symmetric marginal distributions with individual odds suggesting ",
+                                "The input table exhibits non-symmetric marginal distributions with individual odds suggesting ",
                                 "unilateral rather than bilateral association. ",
                                 "Phi (=Cramér's V in 2×2 tables) is sensitive to bilateral (reciprocal) associations ",
                                 "but may underrepresent unilateral patterns. ",
@@ -565,54 +563,29 @@ chisqassocClass <- R6::R6Class(
         },
         
         # *** Helper functions for Cramér's V CI (Smithson 2003) ***
+        # Confidence limits for the noncentrality parameter of chi-squared
+        # (Smithson 2003): find ncp such that P(X <= chival | df, ncp) equals
+        # 1 - alpha/2 (lower limit) or alpha/2 (upper limit). When the
+        # observed chi-squared lies below the corresponding central quantile,
+        # the limit is 0. The search interval is widened until it brackets the
+        # root (the former fixed brackets failed for small chi-squared values).
+        .ncpLimit = function(chival, df, p) {
+            if (is.na(chival) || is.null(chival) || chival <= 0 || df <= 0) return(0)
+            if (stats::pchisq(chival, df, ncp = 0) <= p) return(0)
+            upper <- max(10, 2 * chival)
+            while (stats::pchisq(chival, df, ncp = upper) > p && upper < 1e7) upper <- upper * 2
+            stats::uniroot(function(l) stats::pchisq(chival, df, ncp = l) - p,
+                           interval = c(0, upper), tol = 1e-10)$root
+        },
+        
         .lochi = function(chival, df, conf) {
-            # Calculate lower non-centrality parameter
-            # Guard against edge cases that cause infinite loops
-            if (is.na(chival) || is.null(chival) || chival <= 0 || df <= 0) {
-                return(0)
-            }
-            
-            ulim <- 1 - (1 - conf) / 2
-            lc <- c(0.001, chival / 2, chival)
-            diff <- 1
-            max_iter <- 1000
-            iter <- 0
-            
-            while (diff > 0.00001 && iter < max_iter) {
-                iter <- iter + 1
-                if (stats::pchisq(chival, df, lc[2]) < ulim) {
-                    lc <- c(lc[1], (lc[1] + lc[2]) / 2, lc[2])
-                } else {
-                    lc <- c(lc[2], (lc[2] + lc[3]) / 2, lc[3])
-                }
-                diff <- abs(stats::pchisq(chival, df, lc[2]) - ulim)
-            }
-            return(lc[2])
+            # Lower noncentrality limit
+            private$.ncpLimit(chival, df, 1 - (1 - conf) / 2)
         },
         
         .hichi = function(chival, df, conf) {
-            # Calculate upper non-centrality parameter
-            # Guard against edge cases that cause infinite loops
-            if (is.na(chival) || is.null(chival) || chival <= 0 || df <= 0) {
-                return(0)
-            }
-            
-            uc <- c(chival, 2 * chival, 3 * chival)
-            llim <- (1 - conf) / 2
-            diff <- 1
-            max_iter <- 1000
-            iter <- 0
-            
-            while (diff > 0.00001 && iter < max_iter) {
-                iter <- iter + 1
-                if (stats::pchisq(chival, df, uc[2]) < llim) {
-                    uc <- c(uc[1], (uc[1] + uc[2]) / 2, uc[2])
-                } else {
-                    uc <- c(uc[2], (uc[2] + uc[3]) / 2, uc[3])
-                }
-                diff <- abs(stats::pchisq(chival, df, uc[2]) - llim)
-            }
-            return(uc[2])
+            # Upper noncentrality limit
+            private$.ncpLimit(chival, df, (1 - conf) / 2)
         },
         
         .populateCrosstab = function(contingency_table, rowVar, colVar) {
@@ -815,8 +788,9 @@ chisqassocClass <- R6::R6Class(
                     # Smithson (2003) noncentral chi-square CI
                     delta_lower <- private$.lochi(chisq_obs, df, conf_level)
                     delta_upper <- private$.hichi(chisq_obs, df, conf_level)
-                    phi_lower <- sqrt((delta_lower + df) / n)
-                    phi_upper <- sqrt((delta_upper + df) / n)
+                    # limits for lambda (Smithson 2003) converted with lambda = N * w^2 (Cohen 1988)
+                    phi_lower <- sqrt(delta_lower / n)
+                    phi_upper <- sqrt(delta_upper / n)
                     
                     effect <- private$.interpretChiSqEffect(phi_val, "phi", nr, nc, contingency_table, expected, phi_max, c_max, v_max, w_hat_max, sakoda_max)
                     
@@ -846,8 +820,9 @@ chisqassocClass <- R6::R6Class(
                     
                     delta_lower <- private$.lochi(chisq_obs, df, conf_level)
                     delta_upper <- private$.hichi(chisq_obs, df, conf_level)
-                    phi_mag_lower <- sqrt((delta_lower + df) / n)
-                    phi_mag_upper <- sqrt((delta_upper + df) / n)
+                    # limits for lambda (Smithson 2003) converted with lambda = N * w^2 (Cohen 1988)
+                    phi_mag_lower <- sqrt(delta_lower / n)
+                    phi_mag_upper <- sqrt(delta_upper / n)
                     
                     if (cross_product >= 0) {
                         phi_lower <- phi_mag_lower
@@ -932,14 +907,16 @@ chisqassocClass <- R6::R6Class(
                 }
             }
             
-            # CONTINGENCY COEFFICIENT C - WITH CI (Smithson Formula 6.8)
+            # CONTINGENCY COEFFICIENT C - WITH CI (noncentrality limits, Smithson 2003; lambda = N w^2)
             if (self$options$contingencyC) {
                 C_val <- sqrt(chisq_obs / (chisq_obs + n))
                 
                 delta_lower <- private$.lochi(chisq_obs, df, conf_level)
                 delta_upper <- private$.hichi(chisq_obs, df, conf_level)
-                C_lower <- sqrt((delta_lower + df) / (delta_lower + df + n))
-                C_upper <- sqrt((delta_upper + df) / (delta_upper + df + n))
+                # limits for lambda (Smithson 2003) converted with lambda = N * w^2 (Cohen 1988);
+                # C = sqrt(w^2 / (1 + w^2)) = sqrt(lambda / (lambda + N))
+                C_lower <- sqrt(delta_lower / (delta_lower + n))
+                C_upper <- sqrt(delta_upper / (delta_upper + n))
                 
                 effect <- private$.interpretChiSqEffect(C_val, "contingency_c", nr, nc, contingency_table, expected, phi_max, c_max, v_max, w_hat_max, sakoda_max)
                 
@@ -1035,8 +1012,9 @@ chisqassocClass <- R6::R6Class(
                 
                 delta_lower <- private$.lochi(chisq_obs, df, conf_level)
                 delta_upper <- private$.hichi(chisq_obs, df, conf_level)
-                V_lower <- sqrt((delta_lower + df) / (n * k))
-                V_upper <- sqrt((delta_upper + df) / (n * k))
+                # limits for lambda (Smithson 2003) converted with lambda = N * w^2 (Cohen 1988)
+                V_lower <- sqrt(delta_lower / (n * k))
+                V_upper <- sqrt(delta_upper / (n * k))
                 
                 effect <- private$.interpretChiSqEffect(V_val, "cramers_v", nr, nc, contingency_table, expected, phi_max, c_max, v_max, w_hat_max, sakoda_max)
                 
@@ -1148,8 +1126,9 @@ chisqassocClass <- R6::R6Class(
                 
                 delta_lower <- private$.lochi(chisq_obs, df, conf_level)
                 delta_upper <- private$.hichi(chisq_obs, df, conf_level)
-                w_lower <- sqrt((delta_lower + df) / n)
-                w_upper <- sqrt((delta_upper + df) / n)
+                # limits for lambda (Smithson 2003) converted with lambda = N * w^2 (Cohen 1988)
+                w_lower <- sqrt(delta_lower / n)
+                w_upper <- sqrt(delta_upper / n)
                 
                 effect <- private$.interpretChiSqEffect(w_val, "cohen_w", nr, nc, contingency_table, expected, phi_max, c_max, v_max, w_hat_max, sakoda_max)
                 
@@ -1350,20 +1329,23 @@ chisqassocClass <- R6::R6Class(
                     effectSize = effect_or
                 ))
                 
-                # OR interpretation as table note
+                # OR interpretation as table note (variables named explicitly,
+                # so the sentence reads correctly whatever the level labels)
+                rowVar <- self$options$rows
+                colVar <- self$options$cols
                 if (or_val_ref == 1) {
                     or_text <- sprintf(
-                        "Interpretation (OR = %.2f): %s and %s have similar odds of being %s.",
-                        or_val_ref, colRef, colOther, rowRef)
+                        "Interpretation (OR = %.2f): the odds of %s = '%s' are the same for %s = '%s' and %s = '%s'.",
+                        or_val_ref, rowVar, rowRef, colVar, colRef, colVar, colOther)
                 } else if (or_val_ref > 1) {
                     or_text <- sprintf(
-                        "Interpretation (OR = %.2f): %s have %.2f times the odds of being %s compared to %s.",
-                        or_val_ref, colRef, or_val_ref, rowRef, colOther)
+                        "Interpretation (OR = %.2f): the odds of %s = '%s' are %.2f times as high for %s = '%s' as for %s = '%s'.",
+                        or_val_ref, rowVar, rowRef, or_val_ref, colVar, colRef, colVar, colOther)
                 } else {
                     pctLower <- round((1 - or_val_ref) * 100)
                     or_text <- sprintf(
-                        "Interpretation (OR = %.2f): %s have %.2f times the odds of being %s compared to %s (%d%% lower odds).",
-                        or_val_ref, colRef, or_val_ref, rowRef, colOther, pctLower)
+                        "Interpretation (OR = %.2f): the odds of %s = '%s' are %.2f times as high (%d%% lower) for %s = '%s' as for %s = '%s'.",
+                        or_val_ref, rowVar, rowRef, or_val_ref, pctLower, colVar, colRef, colVar, colOther)
                 }
                 self$results$crosstabTable$setNote(
                     key = "or_interpretation",
@@ -1372,10 +1354,13 @@ chisqassocClass <- R6::R6Class(
                 )
                 
                 # --- YULE'S Q ---
-                Q_val <- (or_val - 1) / (or_val + 1)
+                # Q and Y from the reference-ordered OR, so that their sign
+                # agrees with the reported odds ratio
+                Q_val <- (or_val_ref - 1) / (or_val_ref + 1)
                 Q_se <- sqrt((1/4) * (1 - Q_val^2)^2 * (1/a + 1/b + 1/c + 1/d))
-                Q_lower <- Q_val - z * Q_se
-                Q_upper <- Q_val + z * Q_se
+                # CI: transform the log-OR CI (bounded within ±1), as in the pairwise path
+                Q_lower <- (exp(log_or_ref - z * se_log_or_ref) - 1) / (exp(log_or_ref - z * se_log_or_ref) + 1)
+                Q_upper <- (exp(log_or_ref + z * se_log_or_ref) - 1) / (exp(log_or_ref + z * se_log_or_ref) + 1)
                 z_test_Q <- Q_val / Q_se
                 Q_p <- 2 * stats::pnorm(-abs(z_test_Q))
                 effect_Q <- private$.interpretMarginFreeEffect(abs(Q_val), "yules_q")
@@ -1390,10 +1375,11 @@ chisqassocClass <- R6::R6Class(
                 ))
                 
                 # --- YULE'S Y ---
-                Y_val <- (sqrt(or_val) - 1) / (sqrt(or_val) + 1)
+                Y_val <- (sqrt(or_val_ref) - 1) / (sqrt(or_val_ref) + 1)
                 Y_se <- sqrt((1/16) * (1 - Y_val^2)^2 * (1/a + 1/b + 1/c + 1/d))
-                Y_lower <- Y_val - z * Y_se
-                Y_upper <- Y_val + z * Y_se
+                # CI: transform the log-OR CI (bounded within ±1), as in the pairwise path
+                Y_lower <- (sqrt(exp(log_or_ref - z * se_log_or_ref)) - 1) / (sqrt(exp(log_or_ref - z * se_log_or_ref)) + 1)
+                Y_upper <- (sqrt(exp(log_or_ref + z * se_log_or_ref)) - 1) / (sqrt(exp(log_or_ref + z * se_log_or_ref)) + 1)
                 z_test_Y <- Y_val / Y_se
                 Y_p <- 2 * stats::pnorm(-abs(z_test_Y))
                 effect_Y <- private$.interpretMarginFreeEffect(abs(Y_val), "yules_y")
@@ -1545,7 +1531,7 @@ chisqassocClass <- R6::R6Class(
                 
                 if (has_smithson_ci) {
                     ci_note_parts <- c(ci_note_parts, 
-                                       "Phi, Phi signed, Contingency C, Cramér's V, and Cohen's w use Smithson's (2003) noncentral χ² method")
+                                       "Phi, Phi signed, Contingency C, Cramér's V, and Cohen's w use confidence limits for the noncentrality parameter λ of the χ² distribution (Smithson 2003), converted to each measure through λ = N·w² (Cohen 1988)")
                 }
                 
                 if (has_bootstrap_ci) {
@@ -1577,7 +1563,7 @@ chisqassocClass <- R6::R6Class(
                 ci_note <- paste(ci_note_parts, collapse = ". ")
                 table$setNote(key = "ci_method", note = paste0("<em>CI methods.</em> ", ci_note, "."), init = FALSE)
             } else {
-                table$setNote(key = "ci_method", note = "<em>Note.</em> The selected measure(s) do not have confidence intervals.", init = FALSE)
+                table$setNote(key = "ci_method", note = "The selected measure(s) do not have confidence intervals.", init = FALSE)
             }
         },
         
@@ -1669,7 +1655,8 @@ chisqassocClass <- R6::R6Class(
                             Q_lower <- (exp(log_or_lower) - 1) / (exp(log_or_lower) + 1)
                             Q_upper <- (exp(log_or_upper) - 1) / (exp(log_or_upper) + 1)
                             
-                            z_test <- Q_val / sqrt((1 - Q_val^2)^2 * (1/a + 1/b + 1/c + 1/d))
+                            # SE(Q) = (1/2)(1 - Q^2) sqrt(sum 1/n), as in the 2x2 path
+                            z_test <- Q_val / sqrt((1/4) * (1 - Q_val^2)^2 * (1/a + 1/b + 1/c + 1/d))
                             Q_p <- 2 * stats::pnorm(-abs(z_test))
                             effect <- private$.interpretMarginFreeEffect(abs(Q_val), "yules_q")
                             
@@ -1724,7 +1711,8 @@ chisqassocClass <- R6::R6Class(
                             Y_lower <- (sqrt(exp(log_or_lower)) - 1) / (sqrt(exp(log_or_lower)) + 1)
                             Y_upper <- (sqrt(exp(log_or_upper)) - 1) / (sqrt(exp(log_or_upper)) + 1)
                             
-                            z_test <- Y_val / sqrt((0.25 * (1 - Y_val^2)^2) * (1/a + 1/b + 1/c + 1/d))
+                            # SE(Y) = (1/4)(1 - Y^2) sqrt(sum 1/n), as in the 2x2 path
+                            z_test <- Y_val / sqrt((1/16) * (1 - Y_val^2)^2 * (1/a + 1/b + 1/c + 1/d))
                             Y_p <- 2 * stats::pnorm(-abs(z_test))
                             effect <- private$.interpretMarginFreeEffect(abs(Y_val), "yules_y")
                             
@@ -1812,10 +1800,10 @@ chisqassocClass <- R6::R6Class(
                 # For 2x2 tables, k=1, so no scaling needed - Tier 1 only
                 table$addRow(rowKey = row_count, values = list(
                     measure = "Phi corrected (φ<sub>corr</sub>)",
-                    small = "0.10",
-                    medium = "0.30",
-                    large = "0.50",
-                    notes = "Cohen 1988: 0.1, 0.3, 0.5"
+                    small = "0.100",
+                    medium = "0.300",
+                    large = "0.500",
+                    notes = "Cohen 1988 fixed: 0.1, 0.3, 0.5"
                 ))
                 row_count <- row_count + 1
             }
@@ -1823,9 +1811,9 @@ chisqassocClass <- R6::R6Class(
             if (self$options$coleC7 && is_2x2) {
                 table$addRow(rowKey = row_count, values = list(
                     measure = "Cole's C7",
-                    small = "0.10",
-                    medium = "0.30",
-                    large = "0.50",
+                    small = "0.100",
+                    medium = "0.300",
+                    large = "0.500",
                     notes = "Cohen 1988 fixed: 0.1, 0.3, 0.5"
                 ))
                 row_count <- row_count + 1
@@ -1834,9 +1822,9 @@ chisqassocClass <- R6::R6Class(
             if (self$options$zysnoPhi && is_2x2) {
                 table$addRow(rowKey = row_count, values = list(
                     measure = "Zysno's φ*",
-                    small = "0.10",
-                    medium = "0.30",
-                    large = "0.50",
+                    small = "0.100",
+                    medium = "0.300",
+                    large = "0.500",
                     notes = "Cohen 1988 fixed: 0.1, 0.3, 0.5"
                 ))
                 row_count <- row_count + 1
@@ -1963,9 +1951,9 @@ chisqassocClass <- R6::R6Class(
                 # No tiers - fixed thresholds
                 table$addRow(rowKey = row_count, values = list(
                     measure = "Cohen's w",
-                    small = "0.10",
-                    medium = "0.30",
-                    large = "0.50",
+                    small = "0.100",
+                    medium = "0.300",
+                    large = "0.500",
                     notes = "Cohen 1988 fixed: 0.1, 0.3, 0.5"
                 ))
                 row_count <- row_count + 1
@@ -2094,7 +2082,7 @@ chisqassocClass <- R6::R6Class(
             if (show_df_note) {
                 table$setNote(
                     key = "df_note",
-                    note = sprintf("<em>Note.</em> df = min(rows − 1, columns − 1); for this table, df = %d", k)
+                    note = sprintf("df = min(rows − 1, columns − 1); for this table, df = %d", k)
                 )
             }
         },
@@ -2126,6 +2114,7 @@ chisqassocClass <- R6::R6Class(
                                    "Mueller, J. H., & Schuessler, K. F. (1961). <em>Statistical Reasoning in Sociology</em>. Oxford & IBH Publishing Co.<br/>",
                                    "Buchanan, W. (1974). Nominal and ordinal bivariate statistics: The practitioner's view. <em>American Journal of Political Science, 18</em>(3), 625–646.<br/>",
                                    "Smithson, M. (2003). <em>Confidence Intervals</em>. Sage.<br/>",
+                                   "Cohen, J. (1988). <em>Statistical Power Analysis for the Behavioral Sciences</em> (2nd ed.). Erlbaum.<br/>",
                                    "Bonett, D. G., & Price, R. M. (2007). Statistical inference for generalized Yule coefficients in 2×2 contingency tables. <em>Sociological Methods & Research, 35</em>(3), 429–446.<br/>",
                                    "Alberti, G. (2024). <em>From Data to Insights. A Beginner's Guide to Cross-Tabulation Analysis</em>. Chapman & Hall.</p>")
                 }
@@ -2174,6 +2163,7 @@ chisqassocClass <- R6::R6Class(
                                    "<p>A measure to quantify the strength of association between two categorical variables. It is calculated by dividing the chi-squared value by itself plus the table's grand total, and then taking the square root. It ranges between 0.0 (indicating independence) and less than 1.0. The maximum achievable value depends on the size of the cross-tab, approaching unity only when a table is fairly large.</p>")
                     html <- paste0(html, "<p style='font-size: 0.85em; color: #666; margin-top: 8px; margin-bottom: 12px;'><em>References:</em><br/>",
                                    "Smithson, M. (2003). <em>Confidence Intervals</em>. Sage.<br/>",
+                                   "Cohen, J. (1988). <em>Statistical Power Analysis for the Behavioral Sciences</em> (2nd ed.). Erlbaum.<br/>",
                                    "Sheskin, D. J. (2011). <em>Handbook of Parametric and Nonparametric Statistical Procedures</em> (5th ed.). Chapman and Hall/CRC.<br/>",
                                    "Alberti, G. (2024). <em>From Data to Insights. A Beginner's Guide to Cross-Tabulation Analysis</em>. Chapman & Hall.</p>")
                 }
@@ -2193,10 +2183,11 @@ chisqassocClass <- R6::R6Class(
                     html <- paste0(html,
                                    "<h3 style='color: #2874A6; margin-top: 1.5em;'>Cramér's V</h3>",
                                    "<p>A measure of association for categorical variables, calculated from the chi-squared statistic divided by N × min(r−1, c−1)—that is, the table's grand total times the minimum dimension of the table (minus 1). The division by N × min(r−1, c−1), which corresponds to the maximum chi-squared value attainable given the table's size under like marginal sets, ensures the value stays between 0.0 (no association) and 1.0 (perfect association), and makes the coefficient comparable across tables of different sizes. This measure is suitable for tables larger than 2×2. However, under unlike marginal sets, the upper ceiling of V can be less than unity. Also, with tables featuring a concentration of observations in specific cells, sparse cells with very low or zero counts, or uneven marginal frequencies, V can overestimate the strength of association (see the W-hat coefficient).</p>",
-                                   "<p>The calculation of the 95% confidence interval around Cramér's V is based on Smithson 2003.</p>")
+                                   "<p><strong>Confidence interval.</strong> The interval (at the level set in the options) is obtained by inverting the noncentral χ² distribution to find confidence limits for its noncentrality parameter λ (Smithson 2003). The limits are converted to the effect-size scale through the relation λ = N·w² that links the noncentrality to the population effect size (Cohen 1988), so that V = √(λ / (N × min(r−1, c−1))); the same conversion is used for φ, C (= √(λ / (λ + N))) and Cohen's w. Using the same transformation as for the point estimate guarantees that the interval contains the estimate, and the lower limit is 0 unless χ² exceeds the upper (1 − confidence level)/2 point of the central χ² distribution. Smithson (2003, p. 40) converts the limits with λ + df instead; this gives very similar limits for clear associations, but for weak associations it yields a lower limit above the point estimate.</p>")
                     html <- paste0(html, "<p style='font-size: 0.85em; color: #666; margin-top: 8px; margin-bottom: 12px;'><em>References:</em><br/>",
                                    "Cramér, H. (1946). <em>Mathematical Methods of Statistics</em>. Princeton University Press.<br/>",
                                    "Smithson, M. (2003). <em>Confidence Intervals</em>. Sage.<br/>",
+                                   "Cohen, J. (1988). <em>Statistical Power Analysis for the Behavioral Sciences</em> (2nd ed.). Erlbaum.<br/>",
                                    "Berry, K. J., Johnston, J. E., & Mielke, P. W. (2018). <em>The Measurement of Association: A Permutation Statistical Approach</em>. Springer.<br/>",
                                    "Alberti, G. (2024). <em>From Data to Insights. A Beginner's Guide to Cross-Tabulation Analysis</em>. Chapman & Hall.</p>")
                 }
@@ -2258,7 +2249,7 @@ chisqassocClass <- R6::R6Class(
                                "W-hat cannot achieve its theoretical maximum of unity due to structural constraints imposed by the marginals. ",
                                "In such cases, a maximum-corrected version (W-hat corrected) adjusts the observed W-hat by dividing it by its maximum achievable value, ",
                                "computed from the chi-squared-maximising table. This correction ensures the measure ranges from 0 to 1 under any marginal configuration. ",
-                               "Unlike Kvålseth 2018a, for the time being, the calculation of the 95% confidence interval is based on a bootstrap approach, ",
+                               "Unlike Kvålseth 2018a, for the time being, the calculation of the confidence interval (at the level set in the options) is based on a bootstrap approach, ",
                                "employing B resampled tables, and the 2.5th and 97.5th percentiles of the bootstrap distribution. ",
                                "B is set by default to 999, but can be customised by the user.</p>")
                 html <- paste0(html, "<p style='font-size: 0.85em; color: #666; margin-top: 8px; margin-bottom: 12px;'><em>References:</em><br/>",
@@ -2290,7 +2281,7 @@ chisqassocClass <- R6::R6Class(
                                "<p><strong>Note:</strong> The rendered table provides point estimates without confidence intervals. For formal inference with bootstrap confidence intervals, use the <em>PEM</em> option in the <em>Post-hoc Analysis</em> facility of this module.</p>")
                 html <- paste0(html, "<p style='font-size: 0.85em; color: #666; margin-top: 8px; margin-bottom: 12px;'><em>References:</em><br/>",
                                "Sakoda, J. M. (1981). A generalized index of dissimilarity. <em>Demography, 18</em>(2), 245–250.<br/>",
-                               "Cibois, P. (1993). Le PEM, pourcentage de l'écart maximum: Un indice de liaison entre modalités d'un tableau de contingence. <em>Bulletin de Methodologie Sociologique, 40</em>, 43–63.</p>")
+                               "Cibois, P. (1993). Le PEM, pourcentage de l'écart maximum: Un indice de liaison entre modalités d'un tableau de contingence. <em>Bulletin de Méthodologie Sociologique, 40</em>, 43–63.</p>")
             }
             
             # Margin-free measures
@@ -2596,17 +2587,10 @@ chisqassocClass <- R6::R6Class(
             return(list(max_table = max_table, max_chisq = max_chisq))
         },
         
-        .phi_max = function(contingency_table) {
-            row_totals <- rowSums(contingency_table)
-            col_totals <- colSums(contingency_table)
-            max_result <- private$.max_chisq(row_totals, col_totals)
-            n <- sum(contingency_table)
-            return(sqrt(max_result$max_chisq / n))
-        },
         
         .standardise_crosstabs = function(contingency_table, marginal.type = "average") {
-            # Your existing standardisation implementation using IPF
-            # This is a placeholder - keep your actual implementation
+            # Standardise the table to target margins by iterative
+            # proportional fitting (IPF), preserving the odds-ratio structure
             nr <- nrow(contingency_table)
             nc <- ncol(contingency_table)
             n <- sum(contingency_table)
@@ -2644,16 +2628,6 @@ chisqassocClass <- R6::R6Class(
             return(list(table.stand = table_ipf))
         },
         
-        .cramersVConfInt = function(chisq_obs, n, k, conf_level) {
-            # Correct implementation from your chi-square.r
-            V_val <- sqrt(chisq_obs / (n * k))
-            alpha <- 1 - conf_level
-            z <- stats::qnorm(1 - alpha / 2)
-            SE <- sqrt((1 - V_val^2)^2 / n)
-            V_lower <- max(0, V_val - z * SE)
-            V_upper <- min(1, V_val + z * SE)
-            return(c(V_lower, V_upper))
-        },
         
         .wHat = function(contingency_table) {
             # Convert to proportions (joint probabilities)
@@ -3181,7 +3155,8 @@ chisqassocClass <- R6::R6Class(
             #               "cramers_v_corrected", "cramers_v_standardised", "cramers_v_bias_corrected"
             # W-hat and Sakoda: Tier 1 only
             
-            # Apply thresholds
+            # Apply thresholds (a missing value has no interpretation)
+            if (is.na(value)) return("")
             if (value < small) return("Negligible")
             if (value < medium) return("Small")
             if (value < large) return("Medium")
@@ -3190,6 +3165,7 @@ chisqassocClass <- R6::R6Class(
         
         .interpretMarginFreeEffect = function(value, measure_type) {
             # Effect size interpretation for margin-free measures
+            if (is.null(value) || is.na(value)) return("")
             if (measure_type == "yules_q") {
                 abs_val <- abs(value)
                 if (abs_val < 0.330) return("Negligible")
@@ -3217,56 +3193,6 @@ chisqassocClass <- R6::R6Class(
             }
             
             return("")
-        },
-        
-        .generateORInterpretation = function(or_val, rowRef, colRef, rowOther, colOther) {
-            # Generate plain-language interpretation of the odds ratio
-            # Follows the exact pattern used in the stratified analysis facility
-            
-            if (is.na(or_val) || is.infinite(or_val)) {
-                return("")
-            }
-            
-            # Format OR value
-            orFormatted <- sprintf("%.2f", or_val)
-            
-            # Build interpretation text following stratified analysis logic
-            # rowRef = outcome of interest, colRef = exposure, colOther = reference
-            if (or_val >= 1) {
-                if (or_val == 1) {
-                    annotation <- paste0(
-                        "<em>", colRef, "</em> and <em>", colOther, 
-                        "</em> have similar odds of being <em>", rowRef, "</em>."
-                    )
-                } else {
-                    annotation <- paste0(
-                        "<em>", colRef, "</em> have ", orFormatted, 
-                        " times the odds of being <em>", rowRef,
-                        "</em> compared to <em>", colOther, "</em>."
-                    )
-                }
-            } else {
-                # OR < 1: express using actual OR value with percentage interpretation
-                pctLower <- sprintf("%.0f", (1 - or_val) * 100)
-                annotation <- paste0(
-                    "<em>", colRef, "</em> have ", orFormatted, 
-                    " times the odds of being <em>", rowRef,
-                    "</em> compared to <em>", colOther, 
-                    "</em> (i.e., ", pctLower, "% lower odds)."
-                )
-            }
-            
-            # Wrap in styled div matching asymmetry note styling
-            html <- paste0(
-                "<div style='font-size: 0.9em; color: #555; margin: 10px 0; ",
-                "padding: 8px; background-color: #f0f8ff; ",
-                "border-left: 3px solid #2874A6;'>",
-                "<strong>Interpretation (OR = ", orFormatted, "):</strong> ", annotation,
-                " For statistical significance, refer to the <em>Association Measures Summary</em> table.",
-                "</div>"
-            )
-            
-            return(html)
         }
     )
 )
