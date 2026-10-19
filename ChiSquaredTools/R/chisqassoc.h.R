@@ -440,6 +440,11 @@ chisqassocResults <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class(
                         `title`="Value", 
                         `type`="number"),
                     list(
+                        `name`="valueNcp", 
+                        `title`="Value (\u03BB\u0302)", 
+                        `type`="number", 
+                        `visible`="(phi || phiSigned || contingencyC || cramersV || cohenW)"),
+                    list(
                         `name`="lowerCI", 
                         `title`="Lower CI", 
                         `type`="number"),
@@ -708,16 +713,16 @@ chisqassocBase <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class(
 #' 
 #'
 #' @examples
-#' # Example with Titanic data
-#' data('Titanic')
-#' titanic_df <- as.data.frame(Titanic)
-#' titanic_expanded <- titanic_df[rep(seq_len(nrow(titanic_df)),
-#'                                    titanic_df$Freq), 1:4]
+#' # Example with the Titanic data (one row per cell, counts in 'Freq')
+#' titanic_df <- as.data.frame(datasets::Titanic)
 #'
-#' chisqassoc(
-#'     data = titanic_expanded,
+#' ChiSquaredTools::chisqassoc(
+#'     data = titanic_df,
 #'     rows = 'Sex',
 #'     cols = 'Survived',
+#'     counts = 'Freq',
+#'     rowRef = 'Male',
+#'     colRef = 'No',
 #'     cramersV = TRUE,
 #'     marginFree = TRUE,
 #'     gkLambda = TRUE

@@ -117,7 +117,7 @@ options:
             of V corrected (default: 1000)
 
     - name: seed
-      title: Random Seed
+      title: Random seed
       type: Integer
       min: 1
       max: 999999

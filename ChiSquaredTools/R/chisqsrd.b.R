@@ -416,37 +416,36 @@ chisqsrdClass <- R6::R6Class(
       row_totals <- rowSums(mat)
       col_totals <- colSums(mat)
       
-      # Identify rows to prune: those with total < critical weight
+      # Identify rows and columns below their critical weight. They are
+      # removed only if at least two rows (columns) remain; otherwise
+      # they are listed but kept, and the reason says so
       rows_to_prune <- which(row_totals < critical_weight_row)
+      cols_to_prune <- which(col_totals < critical_weight_col)
+      prune_rows <- length(rows_to_prune) > 0 && nrow(mat) - length(rows_to_prune) >= 2
+      prune_cols <- length(cols_to_prune) > 0 && ncol(mat) - length(cols_to_prune) >= 2
       
       for (idx in rows_to_prune) {
         pruning_info$rows[[length(pruning_info$rows) + 1]] <- list(
           category = rownames(mat)[idx],
           weight = row_totals[idx],
           critical = critical_weight_row,
-          reason = "Weight below critical threshold"
+          reason = if (prune_rows) "Weight below critical threshold" else
+            "Weight below critical threshold; kept, because pruning would leave fewer than two rows"
         )
       }
-      
-      # Identify columns to prune: those with total < critical weight
-      cols_to_prune <- which(col_totals < critical_weight_col)
       
       for (idx in cols_to_prune) {
         pruning_info$cols[[length(pruning_info$cols) + 1]] <- list(
           category = colnames(mat)[idx],
           weight = col_totals[idx],
           critical = critical_weight_col,
-          reason = "Weight below critical threshold"
+          reason = if (prune_cols) "Weight below critical threshold" else
+            "Weight below critical threshold; kept, because pruning would leave fewer than two columns"
         )
       }
       
-      # Remove pruned categories (only if some remain after pruning)
-      if (length(rows_to_prune) > 0 && length(rows_to_prune) < nrow(mat)) {
-        mat <- mat[-rows_to_prune, , drop = FALSE]
-      }
-      if (length(cols_to_prune) > 0 && length(cols_to_prune) < ncol(mat)) {
-        mat <- mat[, -cols_to_prune, drop = FALSE]
-      }
+      if (prune_rows) mat <- mat[-rows_to_prune, , drop = FALSE]
+      if (prune_cols) mat <- mat[, -cols_to_prune, drop = FALSE]
       
       list(matrix = mat, pruning_info = pruning_info)
     },
@@ -1005,7 +1004,8 @@ chisqsrdClass <- R6::R6Class(
                      "significance level. Categories with total weight below this threshold are removed before SRD begins.</p>",
                      "<p style='margin-bottom: 12px;'>Additionally, if pruning causes any remaining row or column to have ",
                      "a zero total (because all its non-zero values were in pruned categories), that row or column ",
-                     "is also removed.</p>",
+                     "is also removed. Categories are removed only if at least two rows (columns) remain; otherwise ",
+                     "they are listed as below the threshold but kept.</p>",
                      "<p style='margin-bottom: 12px;'><em>Note:</em> Pruning can be aggressive with small sample sizes ",
                      "or when data are measured in small units. If important categories are being pruned, consider ",
                      "disabling this option and relying on SRD alone to handle sparse categories through merging.</p>"

@@ -62,6 +62,22 @@ children:
         format: number
         enable: (permTest || monteCarloTest)
   
+  # --- GROUP: Cells (percentages in the observed table) ---
+  - type: CollapseBox
+    label: Cells
+    collapsed: true
+    stretchFactor: 1
+    children:
+      - type: Label
+        label: Percentages
+        children:
+          - type: CheckBox
+            name: pctRow
+          - type: CheckBox
+            name: pctCol
+          - type: CheckBox
+            name: pctTotal
+  
   # --- GROUP: Display Options ---
   - type: CollapseBox
     label: Display Options

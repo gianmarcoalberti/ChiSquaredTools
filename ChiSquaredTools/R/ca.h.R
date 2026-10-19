@@ -962,7 +962,7 @@ caResults <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class(
                         `type`="text"),
                     list(
                         `name`="M2_at_removal", 
-                        `title`="M\u00B2 at Removal", 
+                        `title`="Cumulative M\u00B2", 
                         `type`="number", 
                         `format`="zto"),
                     list(
@@ -1119,7 +1119,8 @@ caResults <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class(
                     "dim2",
                     "reducedPlotAttrDisplay",
                     "dotSize",
-                    "labelSize")))
+                    "labelSize",
+                    "equalScale")))
             self$add(jmvcore::Image$new(
                 options=options,
                 name="overdispersionPlot",
@@ -1181,14 +1182,15 @@ caBase <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class(
 #'
 #' @examples
 #' \donttest{
-#' data('HairEyeColor')
-#' dat <- as.data.frame(HairEyeColor)
+#' dat <- as.data.frame(datasets::HairEyeColor)
 #'
 #' ChiSquaredTools::ca(
 #'     data = dat,
 #'     rows = 'Hair',
 #'     cols = 'Eye',
-#'     counts = 'Freq'
+#'     counts = 'Freq',
+#'     geometricRefCategoryRow = 'Black',
+#'     geometricRefCategoryCol = 'Brown'
 #' )
 #'}
 #' @param data The dataset containing the variables for analysis.
@@ -1313,9 +1315,10 @@ caBase <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class(
 #' @param showReducedCAPlot Display a symmetric CA plot using only the
 #'   attributes retained after elbow-based selection. Allows visual comparison
 #'   with the full-data CA plot.
-#' @param reducedPlotAttrDisplay How to display low-influence attributes
-#'   (those below the elbow) on the reduced-data CA plot. 'Fade' renders them
-#'   with reduced opacity; 'Hide' removes them entirely.
+#' @param reducedPlotAttrDisplay What the reduced-data CA plot shows. 'Full
+#'   data, low-influence faded' draws the full-data CA with the low-influence
+#'   attributes (those removed up to the elbow) faded; 'Reduced data only'
+#'   re-runs CA without them.
 #' @param showOverdispersionPlot Display a diagnostic plot for overdispersion
 #'   (Beh, Lombardo & Alberti,  2018). If points cluster to the left side of the
 #'   plot rather than  scattering randomly, overdispersion is present and

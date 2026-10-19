@@ -26,22 +26,21 @@ description:
         - Goodman-Kruskal residuals
         - Dependence Evaluator Proportion (DEP)
         
-        Significant positive values are highlighted in red, negative with blue.
+        Significant cells are highlighted in the tables.
         Significance tables automatically identify attraction/repulsion patterns.
         
     R:
         dontrun: false
         usage: |
-            # Example with Titanic data
-            data('Titanic')
-            titanic_df <- as.data.frame(Titanic)
-            titanic_expanded <- titanic_df[rep(seq_len(nrow(titanic_df)), 
-                                               titanic_df$Freq), 1:4]
+            # Example with the Titanic data (one row per cell, counts in 'Freq')
+            titanic_df <- as.data.frame(datasets::Titanic)
             
-            chisqposthoc(
-                data = titanic_expanded,
+            ChiSquaredTools::chisqposthoc(
+                data = titanic_df,
                 rows = 'Class',
                 cols = 'Survived',
+                counts = 'Freq',
+                depOutcome = 'Yes',
                 stdres = TRUE,
                 pem = TRUE,
                 sidakCorrection = TRUE
@@ -93,7 +92,7 @@ options:
             The variable will be treated as numeric frequencies.
 
     - name: stdres
-      title: Standardised Residuals
+      title: Standardised residuals
       type: Bool
       default: false
       description:
@@ -101,7 +100,7 @@ options:
             TRUE or FALSE (default: FALSE), compute standardised residuals
 
     - name: momcorrstdres
-      title: Moment-Corrected Standardised Residuals
+      title: Moment-corrected standardised residuals
       type: Bool
       default: false
       description:
@@ -109,7 +108,7 @@ options:
             TRUE or FALSE (default: FALSE), compute moment-corrected standardised residuals
 
     - name: adjstdres
-      title: Adjusted Standardised Residuals
+      title: Adjusted standardised residuals
       type: Bool
       default: true
       description:
@@ -117,7 +116,7 @@ options:
             TRUE (default) or FALSE, compute adjusted standardised residuals
 
     - name: quetelet
-      title: Quetelet Index
+      title: Quetelet index
       type: Bool
       default: false
       description:
@@ -125,7 +124,7 @@ options:
             TRUE or FALSE (default: FALSE), compute Quetelet Index
 
     - name: ij
-      title: IJ Association Factor
+      title: IJ association factor
       type: Bool
       default: false
       description:
@@ -133,7 +132,7 @@ options:
             TRUE or FALSE (default: FALSE), compute IJ association factor
 
     - name: bsOutlier
-      title: Backwards-Stepping Outlier Detection
+      title: Backwards-stepping outlier detection
       type: Bool
       default: false
       description:
@@ -145,7 +144,7 @@ options:
             Method from Simonoff (1988).
 
     - name: bsKmax
-      title: Maximum Outliers to Test (k_max, cell count)
+      title: Maximum number of outlying cells to test (k max)
       type: Integer
       min: 1
       max: 100
@@ -168,7 +167,7 @@ options:
             Sakoda's cell-level index D_ij, expressed as a percentage rather than proportion.
 
     - name: medpolish
-      title: Standardised Median Polish Residuals
+      title: Standardised median polish residuals
       type: Bool
       default: false
       description:
@@ -176,7 +175,7 @@ options:
             TRUE or FALSE (default: FALSE), compute standardised median polish residuals
 
     - name: adjmedpolish
-      title: Adjusted Standardised Median Polish Residuals
+      title: Adjusted standardised median polish residuals
       type: Bool
       default: false
       description:
@@ -184,7 +183,7 @@ options:
             TRUE or FALSE (default: FALSE), compute adjusted standardised median polish residuals
 
     - name: gkres
-      title: Goodman-Kruskal Residuals
+      title: Goodman-Kruskal residuals
       type: Bool
       default: false
       description:
@@ -206,7 +205,7 @@ options:
             and computes a normalised probability difference for each row category.
 
     - name: depOutcome
-      title: Outcome Category (for DEP)
+      title: Outcome category
       type: Level
       variable: (cols)
       description:
@@ -215,7 +214,7 @@ options:
             Levels are populated from the column variable.
 
     - name: sidakCorrection
-      title: Apply Šidák correction (for std./moment-corr./adj. std. residuals)
+      title: Šidák correction (standardised, moment-corrected and adjusted residuals)
       type: Bool
       default: false
       description:
@@ -224,7 +223,7 @@ options:
             standardised, moment-corrected standardised, and adjusted standardised residual significance thresholds
 
     - name: confLevel
-      title: Confidence Level (for PEM)
+      title: Confidence level
       type: Number
       min: 50
       max: 99.9
@@ -234,7 +233,7 @@ options:
             confidence level as percentage for PEM bootstrap confidence intervals (default: 95)
 
     - name: bootstrapReps
-      title: Bootstrap Replications (for PEM)
+      title: Bootstrap replications
       type: Integer
       min: 100
       max: 10000
@@ -245,7 +244,7 @@ options:
             (default: 999)
 
     - name: seed
-      title: Random Seed
+      title: Random seed
       type: Integer
       min: 1
       max: 999999

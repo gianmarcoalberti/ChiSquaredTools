@@ -30,7 +30,7 @@ children:
             maxItemCount: 1
             isTarget: true
   - type: CollapseBox
-    label: Chi-squared-based Measures
+    label: Chi-Squared-Based Measures
     collapsed: false
     stretchFactor: 1
     children:
@@ -129,7 +129,7 @@ children:
               - type: CheckBox
                 name: cohenW
   - type: CollapseBox
-    label: Distance-based Measures
+    label: Distance-Based Measures
     collapsed: true
     stretchFactor: 1
     children:
@@ -172,7 +172,7 @@ children:
               - type: CheckBox
                 name: sakodaLocal
   - type: CollapseBox
-    label: Margin-free Measures
+    label: Margin-Free Measures
     collapsed: true
     stretchFactor: 1
     children:
@@ -190,7 +190,7 @@ children:
         children:
           - type: LevelSelector
             name: colRef
-            label: Col. category of interest (OR, 2×2 only)
+            label: Column category of interest (OR, 2×2 only)
             enable: (marginFree)
   - type: CollapseBox
     label: PRE Measures

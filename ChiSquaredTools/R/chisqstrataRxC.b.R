@@ -6,19 +6,7 @@ chisqstrataRxCClass <- R6::R6Class(
   inherit = chisqstrataRxCBase,
   private = list(
     
-    # Cache fields for expensive computations
-    .cachedDataSignature = NULL,
-    .cachedVResults = NULL,
-    .cachedMarginalVResult = NULL,
-    .cachedWeightedVcorr = NULL,
-    .cachedWeightedCI = NULL,
-    .cachedChiSqResults = NULL,
-    .cachedMarginalChiSq = NULL,
-    .cachedCmhTest = NULL,
-    .cachedLoglinResult = NULL,
     
-    # Structure cache key for preventing unnecessary rebuilds
-    .structureKey = NULL,
     
     # ═══════════════════════════════════════════════════════════════════════════
     # .init() - Pre-create table structures to prevent flicker
@@ -56,27 +44,6 @@ chisqstrataRxCClass <- R6::R6Class(
       K <- length(strataLevels)
       nRows <- length(rowLevels)
       nCols <- length(colLevels)
-      
-      # ═══════════════════════════════════════════════════════════════════════════
-      # Guard: Skip structure rebuild if clearWith options unchanged
-      # This prevents table flickering when toggling display-only options
-      # ═══════════════════════════════════════════════════════════════════════════
-      
-      structureKey <- paste(
-        rowVar, colVar, strataVar,
-        self$options$counts,
-        K, nRows, nCols,
-        paste(rowLevels, collapse = ","),
-        paste(colLevels, collapse = ","),
-        paste(strataLevels, collapse = ","),
-        sep = "|"
-      )
-      
-      if (identical(private$.structureKey, structureKey)) {
-        # Structure already built for these options, skip rebuild
-        return()
-      }
-      private$.structureKey <- structureKey
       
       # ═══════════════════════════════════════════════════════════════════════════
       # Initialise partial tables (one per stratum)
@@ -174,6 +141,8 @@ chisqstrataRxCClass <- R6::R6Class(
       }
       # Add marginal row
       stratumTable$addRow(rowKey = 'marginal', values = list(stratum = "Marginal Table"))
+      # Pooled chi-squared row (sum of the partial tables)
+      stratumTable$addRow(rowKey = 'pooled', values = list(stratum = "Pooled (sum of partial)"))
       
       # ═══════════════════════════════════════════════════════════════════════════
       # Initialise residuals tables (one per stratum)
@@ -408,94 +377,71 @@ chisqstrataRxCClass <- R6::R6Class(
       # 5. Compute V corrected and bootstrap CIs for each stratum
       # ═══════════════════════════════════════════════════════════════════════════
       
-      # Determine whether bootstrap CIs are actually required for display
-      # CIs are shown in: stratumResultsTable (always), summaryMeasureTable (always),
-      # forestPlot (if enabled), interpretation (if enabled)
-      # Since the core tables always display CIs, we need bootstrap on first computation.
-      # However, we can CACHE the results to avoid recomputation on display-only changes.
+      # (bootstrap CIs are always shown in the stratum and summary tables)
+      # Fix the seed so bootstrap CIs are reproducible across re-runs
+      set.seed(self$options$seed)
+      vResults <- lapply(listOfTables, private$.calculateVcorrectedAndCI, nBootstrap)
+      marginalVResult <- private$.calculateVcorrectedAndCI(marginalTable, nBootstrap)
       
-      # Create a signature of the data and analytical parameters
-      dataSignature <- paste(
-        self$options$rows,
-        self$options$cols,
-        self$options$strata,
-        self$options$counts,
-        self$options$nBootstrap,
-        self$options$seed,
-        self$options$strataOrdered,
-        sep = "|"
-      )
+      stratum_totals <- sapply(listOfTables, sum)
+      v_corrected_values <- sapply(vResults, function(x) x$vcorr)
+      weighted_vcorr <- sum(stratum_totals * v_corrected_values) / sum(stratum_totals)
       
-      # Check if cached results exist and match current data
-      if (!is.null(private$.cachedDataSignature) && 
-          private$.cachedDataSignature == dataSignature &&
-          !is.null(private$.cachedVResults)) {
-        
-        # Reuse cached results (display options changed, data unchanged)
-        vResults <- private$.cachedVResults
-        marginalVResult <- private$.cachedMarginalVResult
-        weighted_vcorr <- private$.cachedWeightedVcorr
-        weightedCI <- private$.cachedWeightedCI
-        chiSqResults <- private$.cachedChiSqResults
-        marginalChiSq <- private$.cachedMarginalChiSq
-        cmhTest <- private$.cachedCmhTest
-        loglinResult <- private$.cachedLoglinResult
-        
-      } else {
-        
-        # Compute fresh (first run or data/parameters changed)
-        # Fix the seed so bootstrap CIs are reproducible across re-runs
-        set.seed(self$options$seed)
-        vResults <- lapply(listOfTables, private$.calculateVcorrectedAndCI, nBootstrap)
-        marginalVResult <- private$.calculateVcorrectedAndCI(marginalTable, nBootstrap)
-        
-        stratum_totals <- sapply(listOfTables, sum)
-        v_corrected_values <- sapply(vResults, function(x) x$vcorr)
-        weighted_vcorr <- sum(stratum_totals * v_corrected_values) / sum(stratum_totals)
-        
-        weightedCI <- private$.bootstrapWeightedVcorrected(listOfTables, nBootstrap)
-        
-        # ═══════════════════════════════════════════════════════════════════════════
-        # 6. Chi-squared tests for partial tables
-        # ═══════════════════════════════════════════════════════════════════════════
-        
-        suppressWarnings({
-          chiSqResults <- lapply(listOfTables, function(tbl) {
-            test <- stats::chisq.test(tbl, correct = FALSE)
-            list(
-              statistic = as.numeric(test$statistic),
-              df = as.integer(test$parameter),
-              pvalue = test$p.value
-            )
-          })
-          
-          marginalChiSq <- stats::chisq.test(marginalTable, correct = FALSE)
-          
-          # Generalised CMH test
-          cmhTest <- stats::mantelhaen.test(array3D, correct = FALSE)
+      weightedCI <- private$.bootstrapWeightedVcorrected(listOfTables, nBootstrap)
+      
+      # ═══════════════════════════════════════════════════════════════════════════
+      # 6. Chi-squared tests for partial tables
+      # ═══════════════════════════════════════════════════════════════════════════
+      
+      suppressWarnings({
+        chiSqResults <- lapply(listOfTables, function(tbl) {
+          test <- stats::chisq.test(tbl, correct = FALSE)
+          list(
+            statistic = as.numeric(test$statistic),
+            df = as.integer(test$parameter),
+            pvalue = test$p.value
+          )
         })
         
-        # Log-linear homogeneity test
-        loglinResult <- private$.loglinearHomogeneityTest(array3D)
+        marginalChiSq <- stats::chisq.test(marginalTable, correct = FALSE)
         
-        # Cache the results
-        private$.cachedDataSignature <- dataSignature
-        private$.cachedVResults <- vResults
-        private$.cachedMarginalVResult <- marginalVResult
-        private$.cachedWeightedVcorr <- weighted_vcorr
-        private$.cachedWeightedCI <- weightedCI
-        private$.cachedChiSqResults <- chiSqResults
-        private$.cachedMarginalChiSq <- marginalChiSq
-        private$.cachedCmhTest <- cmhTest
-        private$.cachedLoglinResult <- loglinResult
+        # Generalised CMH test
+        cmhTest <- stats::mantelhaen.test(array3D, correct = FALSE)
+      })
+      
+      # Log-linear homogeneity test
+      loglinResult <- private$.loglinearHomogeneityTest(array3D)
+      
+      # Pooled chi-squared test: the sum of the partial-table chi-squared values,
+      # which (unlike the generalised CMH test) does not assume that the strata
+      # share the same pattern of association, so opposite patterns cannot cancel
+      pooledStat <- sum(sapply(chiSqResults, function(x) x$statistic))
+      pooledDf <- sum(sapply(chiSqResults, function(x) x$df))
+      pooledChiSq <- list(
+        statistic = pooledStat, df = pooledDf,
+        pvalue = if (is.finite(pooledStat) && pooledDf > 0)
+          stats::pchisq(pooledStat, pooledDf, lower.tail = FALSE) else NA_real_
+      )
+      
+      # Pattern reversal, the R x C counterpart of odds ratios pointing in opposite
+      # directions: a cell with a significant positive adjusted residual in one
+      # stratum and a significant negative one in another
+      residList <- lapply(listOfTables, private$.computeAdjustedStandardisedResiduals)
+      reversalCells <- character(0)
+      rowLv <- rownames(listOfTables[[1]]); colLv <- colnames(listOfTables[[1]])
+      for (i in seq_along(rowLv)) for (j in seq_along(colLv)) {
+        vals <- sapply(residList, function(r) r[i, j])
+        if (any(vals > 1.96, na.rm = TRUE) && any(vals < -1.96, na.rm = TRUE))
+          reversalCells <- c(reversalCells, paste0("'", rowLv[i], "' \u00D7 '", colLv[j], "'"))
       }
+      
       
       # ═══════════════════════════════════════════════════════════════════════════
       # 7. Populate results tables
       # ═══════════════════════════════════════════════════════════════════════════
       
       private$.populateStratumResultsTable(vResults, marginalVResult, chiSqResults, 
-                                           marginalChiSq, strataNames)
+                                           marginalChiSq, strataNames, pooledChiSq)
       
       # Populate residuals section
       private$.populateResidualsSection(listOfTables, strataNames, rowVar, colVar)
@@ -521,10 +467,13 @@ chisqstrataRxCClass <- R6::R6Class(
       if (is.na(cmhTest$p.value) || is.na(loglinResult$pvalue)) {
         self$results$diagnosticTree$setState(NULL)
       } else {
+        llSigTree <- loglinResult$pvalue < 0.05
+        # The deciding test: CMH without heterogeneity, pooled chi-squared with it
+        decideSig <- if (llSigTree) isTRUE(pooledChiSq$pvalue < 0.05) else cmhTest$p.value < 0.05
         diagnosticData <- list(
-          cmh_sig = cmhTest$p.value < 0.05,
-          loglin_sig = loglinResult$pvalue < 0.05,
-          scenario = private$.determineScenario(cmhTest$p.value < 0.05, loglinResult$pvalue < 0.05)
+          loglin_sig = llSigTree,
+          decide_sig = decideSig,
+          scenario = private$.determineScenario(llSigTree, decideSig)
         )
         self$results$diagnosticTree$setState(diagnosticData)
       }
@@ -542,7 +491,9 @@ chisqstrataRxCClass <- R6::R6Class(
       private$.populateInterpretationTable(
         cmhTest, loglinResult,
         weighted_vcorr, weightedCI,
-        rowVar, colVar, strataVar
+        rowVar, colVar, strataVar,
+        marginalP = marginalChiSq$p.value, marginalVcorr = marginalVResult$vcorr,
+        pooledChiSq = pooledChiSq, reversalCells = reversalCells
       )
       
       # ═══════════════════════════════════════════════════════════════════════════
@@ -653,8 +604,11 @@ chisqstrataRxCClass <- R6::R6Class(
         max_res_boot <- private$.max_chisq(r_boot, c_boot)
         chi_boot_max <- max_res_boot$max_chisq
         
-        # E. Calculate V_corrected for this replicate
-        if (is.na(chi_boot_obs) || chi_boot_max <= 0) {
+        # E. Calculate V_corrected for this replicate (a replicate with an
+        # empty row or column has no V on the observed dimensions: dropped)
+        if (any(r_boot == 0) || any(c_boot == 0)) {
+          val <- NA_real_
+        } else if (is.na(chi_boot_obs) || chi_boot_max <= 0) {
           val <- 0
         } else {
           val <- sqrt(chi_boot_obs / chi_boot_max)
@@ -668,6 +622,7 @@ chisqstrataRxCClass <- R6::R6Class(
       ci <- quantile(boot_v_corr, probs = c(0.025, 0.975), na.rm = TRUE)
       
       return(list(
+        n_dropped = sum(is.na(boot_v_corr)),
         chisq = chisq_obs,
         df = (nr - 1) * (nc - 1),
         v = v_obs,
@@ -716,8 +671,10 @@ chisqstrataRxCClass <- R6::R6Class(
           max_res <- private$.max_chisq(r_boot, c_boot)
           chi_max <- max_res$max_chisq
           
-          # E. V Corrected for Stratum i
-          if (is.na(chi_obs) || chi_max <= 0) {
+          # E. V Corrected for Stratum i (empty row or column: replicate dropped)
+          if (any(r_boot == 0) || any(c_boot == 0)) {
+            val <- NA_real_
+          } else if (is.na(chi_obs) || chi_max <= 0) {
             val <- 0
           } else {
             val <- sqrt(as.numeric(chi_obs) / chi_max)
@@ -735,6 +692,7 @@ chisqstrataRxCClass <- R6::R6Class(
       ci <- quantile(boot_weighted, probs = c(0.025, 0.975), na.rm = TRUE)
       
       return(list(
+        n_dropped = sum(is.na(boot_weighted)),
         ci_lower = as.numeric(ci[1]),
         ci_upper = as.numeric(ci[2])
       ))
@@ -916,7 +874,7 @@ chisqstrataRxCClass <- R6::R6Class(
     # ═══════════════════════════════════════════════════════════════════════════
     
     .populateStratumResultsTable = function(vResults, marginalVResult, chiSqResults, 
-                                            marginalChiSq, strataNames) {
+                                            marginalChiSq, strataNames, pooledChiSq = NULL) {
       
       table <- self$results$stratumResultsTable
       K <- length(vResults)
@@ -949,11 +907,30 @@ chisqstrataRxCClass <- R6::R6Class(
         ciUpper = marginalVResult$ci_upper
       ))
       
+      # Pooled row: a test only, so the V columns stay blank
+      if (!is.null(pooledChiSq)) {
+        table$setRow(rowKey = 'pooled', values = list(
+          stratum = "Pooled (sum of partial)",
+          chisq = pooledChiSq$statistic, df = pooledChiSq$df, pvalue = pooledChiSq$pvalue,
+          v = '', vmax = '', vcorr = '', ciLower = '', ciUpper = ''
+        ))
+      }
+      
       # Add footnote about V corrected CI interpretation
       table$setNote('vcorrCINote', 
                     paste0("V corrected is bounded between 0 and 1 by definition; ",
-                           "its confidence interval cannot include 0 and therefore ",
+                           "its bootstrap confidence interval therefore ",
                            "cannot be used to test the null hypothesis of no association."))
+      
+      nDropped <- sum(sapply(vResults, function(x) if (is.null(x$n_dropped)) 0 else x$n_dropped)) +
+        (if (is.null(marginalVResult$n_dropped)) 0 else marginalVResult$n_dropped)
+      if (nDropped > 0) {
+        table$setNote('bootDropped', sprintf(paste0(
+          "Bootstrap: %d resampled table(s) with an empty row or column (across all tables) ",
+          "were left out of the percentile intervals."), nDropped))
+      } else {
+        table$setNote('bootDropped', NULL)
+      }
     },
     
     # ═══════════════════════════════════════════════════════════════════════════
@@ -975,14 +952,15 @@ chisqstrataRxCClass <- R6::R6Class(
       cmhSig <- cmhTest$p.value < 0.05
       if (cmhSig) {
         cmhFootnote <- paste0(
-          "The CMH test is significant, suggesting conditional dependence: there is evidence ",
-          "of association between the row and column variables after controlling for the strata. ",
-          "See the homogeneity test to judge whether the pattern is consistent across strata."
+          "The CMH test is significant: evidence of conditional dependence, that is, of an ",
+          "association between the row and column variables in at least one stratum. ",
+          "See the homogeneity test to judge whether the association differs across strata."
         )
       } else {
         cmhFootnote <- paste0(
-          "The CMH test is not significant, suggesting conditional independence: ",
-          "no association between the row and column variables after controlling for the stratifying variable."
+          "The CMH test is not significant: no evidence of conditional dependence, that is, the data ",
+          "are compatible with no association in any stratum. Different patterns in different strata ",
+          "can cancel out, so check the homogeneity test and the pooled chi-squared test as well."
         )
       }
       table$setNote('cmhInterpretation', cmhFootnote)
@@ -996,11 +974,13 @@ chisqstrataRxCClass <- R6::R6Class(
       
       table <- self$results$homogeneityTable
       
+      # A failed fit leaves the cells blank (the note explains why)
+      fitted <- !is.na(loglinResult$pvalue)
       table$setRow(rowKey = 1, values = list(
         test = "Log-Linear Likelihood Ratio",
-        statistic = loglinResult$statistic,
-        df = loglinResult$df,
-        pvalue = loglinResult$pvalue
+        statistic = if (fitted) loglinResult$statistic else "",
+        df = if (fitted) loglinResult$df else "",
+        pvalue = if (fitted) loglinResult$pvalue else ""
       ))
       
       # Add conditional footnote based on significance
@@ -1018,8 +998,8 @@ chisqstrataRxCClass <- R6::R6Class(
         )
       } else {
         homogFootnote <- paste0(
-          "The test is not significant: no evidence against homogeneity of association. ",
-          "The association pattern is consistent across strata."
+          "The test is not significant: no evidence that the association differs across strata ",
+          "(the test cannot show that it is the same in every stratum)."
         )
       }
       table$setNote('homogeneityInterpretation', homogFootnote)
@@ -1039,6 +1019,13 @@ chisqstrataRxCClass <- R6::R6Class(
         ciLower = weightedCI$ci_lower,
         ciUpper = weightedCI$ci_upper
       ))
+      if (isTRUE(weightedCI$n_dropped > 0)) {
+        table$setNote('bootDropped', sprintf(paste0(
+          "Bootstrap: %d replicate(s) in which a resampled partial table had an empty row or column ",
+          "were left out of the percentile interval."), weightedCI$n_dropped))
+      } else {
+        table$setNote('bootDropped', NULL)
+      }
       
       # Add footnote about interpretation
       llSig <- isTRUE(loglinResult$pvalue < 0.05)
@@ -1048,22 +1035,22 @@ chisqstrataRxCClass <- R6::R6Class(
         summaryFootnote <- paste0(
           "One of the tests could not be computed, so whether this summary ",
           "is meaningful cannot be judged from the tests.")
+      } else if (llSig) {
+        # Heterogeneous association: no single summary
+        summaryFootnote <- paste0(
+          "Heterogeneity detected: this summary may be misleading. ",
+          "Report stratum-specific V corrected values instead."
+        )
       } else if (!cmhSig) {
         # No conditional association detected
         summaryFootnote <- paste0(
           "No conditional association detected (CMH test not significant). ",
           "This summary measure is not substantively meaningful."
         )
-      } else if (llSig) {
-        # Conditional association exists but heterogeneous
-        summaryFootnote <- paste0(
-          "Heterogeneity detected: this summary may be misleading. ",
-          "Report stratum-specific V corrected values instead."
-        )
       } else {
         # Conditional association exists and is homogeneous
         summaryFootnote <- paste0(
-          "Homogeneity holds: this weighted average provides a valid summary of the conditional association."
+          "No evidence of heterogeneity: this weighted average can be used as a summary of the conditional association."
         )
       }
       table$setNote('summaryInterpretation', summaryFootnote)
@@ -1147,7 +1134,7 @@ chisqstrataRxCClass <- R6::R6Class(
               table$addFormat(
                 rowKey = i,
                 col = paste0('col', j),
-                format = Cell.NEGATIVE
+                format = jmvcore::Cell.NEGATIVE
               )
             }
           }
@@ -1172,7 +1159,9 @@ chisqstrataRxCClass <- R6::R6Class(
     
     .populateInterpretationTable = function(cmhTest, loglinResult,
                                             weighted_vcorr, weightedCI,
-                                            rowVar, colVar, strataVar) {
+                                            rowVar, colVar, strataVar,
+                                            marginalP = NA, marginalVcorr = NA,
+                                            pooledChiSq = NULL, reversalCells = character(0)) {
       
       table <- self$results$interpretationTable
       
@@ -1206,75 +1195,96 @@ chisqstrataRxCClass <- R6::R6Class(
       # STAGE 1: Determine conditional dependence status
       # ─────────────────────────────────────────────────────────────────────────
       
-      if (cmhSig) {
+      pairTxt <- paste0("'", rowVar, "' and '", colVar, "'")
+      marginalSig <- isTRUE(marginalP < 0.05)
+      pooledSig <- isTRUE(pooledChiSq$pvalue < 0.05)
+      pooledPTxt <- if (isTRUE(pooledChiSq$pvalue < 0.001)) "p < 0.001" else
+        sprintf("p = %.3f", pooledChiSq$pvalue)
+      reversal <- length(reversalCells) > 0
+      reversalTxt <- if (reversal) paste0(
+        " The pattern reverses between strata in ", paste(reversalCells, collapse = ", "),
+        " (adjusted residual above 1.96 in one stratum and below \u22121.96 in another).") else ""
+      
+      # Which test decides conditional dependence: both tests share the null hypothesis
+      # of conditional independence, but the generalised CMH test is aimed at
+      # a common pattern of association, so it is used when there is no evidence of
+      # heterogeneity (where it is the most powerful test); with significant
+      # heterogeneity the pooled chi-squared test, which is not aimed at a common pattern,
+      # is used instead
+      if (llSig) {
+        if (pooledSig) {
+          stage1Text <- paste0(
+            "Pooled chi-squared test significant (", pooledPTxt, "): ", pairTxt,
+            " are associated within strata, but the association differs across them. The CMH test (",
+            if (cmhSig) "significant" else "not significant",
+            "), which is designed to detect a pattern common to all strata, should ", if (reversal) "not be interpreted." else "be read with caution.",
+            reversalTxt
+          )
+        } else {
+          stage1Text <- paste0(
+            "Neither the pooled chi-squared test nor the CMH test is significant: no evidence of an ",
+            "association between ", pairTxt, " within strata of '", strataVar, "'."
+          )
+        }
+      } else if (cmhSig) {
         stage1Text <- paste0(
-          "CMH test significant (p < 0.05): the association between '", rowVar, 
-          "' and '", colVar, "' persists after controlling for '", strataVar, "'."
+          "CMH test significant (p < 0.05): conditional dependence; ", pairTxt,
+          " are associated in at least one stratum of '", strataVar, "'."
         )
       } else {
         stage1Text <- paste0(
-          "CMH test not significant (p \u2265 0.05): no association between '", 
-          rowVar, "' and '", colVar, "' after controlling for '", strataVar, "'."
+          "CMH test not significant (p \u2265 0.05): no evidence of conditional dependence; the data ",
+          "are compatible with no association between ", pairTxt, " in any stratum of '", strataVar, "'."
         )
       }
-      
-      # ─────────────────────────────────────────────────────────────────────────
-      # STAGE 2: Determine homogeneity status
-      # ─────────────────────────────────────────────────────────────────────────
       
       if (llSig) {
         stage2Text <- paste0(
-          "Log-linear homogeneity test significant: the association pattern ",
-          "is heterogeneous across strata (effect modification)."
+          "Log-linear homogeneity test significant: the association differs across strata ",
+          "(effect modification)."
         )
       } else {
         stage2Text <- paste0(
-          "Log-linear homogeneity test not significant: the association pattern ",
-          "is homogeneous across strata."
+          "Log-linear homogeneity test not significant: no evidence that the association ",
+          "differs across strata (the test cannot show that it is the same)."
         )
       }
       
-      # ─────────────────────────────────────────────────────────────────────────
-      # STAGE 3: Determine scenario and recommendation
-      # ─────────────────────────────────────────────────────────────────────────
-      
-      if (cmhSig && !llSig) {
-        # Scenario 1: Replication (homogeneous association)
-        scenario <- "Replication"
+      fmt3 <- function(x) sprintf("%.3f", x)
+      if (!llSig && cmhSig) {
+        scenario <- "Homogeneous Association"
         recommendation <- paste0(
-          "'", strataVar, "' is neither a confounder nor an effect modifier. ",
-          "The association is consistent across strata. ",
-          "The weighted average V corrected (", sprintf("%.3f", weighted_vcorr), 
-          "; 95% CI: ", sprintf("%.3f", weightedCI$ci_lower), 
-          "\u2013", sprintf("%.3f", weightedCI$ci_upper), ") provides a valid summary."
+          "the association is present within strata, with no evidence that it differs across them. ",
+          "The weighted average V corrected (", fmt3(weighted_vcorr),
+          "; 95% CI: ", fmt3(weightedCI$ci_lower), "\u2013", fmt3(weightedCI$ci_upper),
+          ") can be used as a summary.",
+          if (is.finite(marginalVcorr)) paste0(
+            " Compare it with the marginal V corrected (", fmt3(marginalVcorr), "): a clear ",
+            "difference would suggest that '", strataVar, "' changes the strength of the association.")
+          else ""
         )
-        
-      } else if (cmhSig && llSig) {
-        # Scenario 2: Interaction (heterogeneous association)
-        scenario <- "Interaction"
-        recommendation <- paste0(
-          "'", strataVar, "' acts as an effect modifier: the strength of association ",
-          "varies across strata. Report stratum-specific V corrected values rather than ",
-          "the weighted average."
-        )
-        
-      } else if (!cmhSig && !llSig) {
-        # Scenario 3: Conditional independence
+      } else if (!llSig && !cmhSig) {
         scenario <- "Conditional Independence"
         recommendation <- paste0(
-          "No conditional association exists between '", rowVar, "' and '", colVar, 
-          "' given '", strataVar, "'. If a marginal association was observed, ",
-          "'", strataVar, "' may have acted as a confounder."
+          "no evidence of an association between ", pairTxt, " within strata of '", strataVar, "'.",
+          if (marginalSig) paste0(
+            " Because the marginal table does show an association, this is consistent with '",
+            strataVar, "' accounting for it (confounding).")
+          else " The marginal table shows no association either."
         )
-        
-      } else {
-        # Scenario 4: CMH not significant but heterogeneity present
-        scenario <- "Opposing Associations"
+      } else if (llSig && pooledSig) {
+        scenario <- if (reversal) "Interaction (Pattern Reversal)" else "Interaction"
         recommendation <- paste0(
-          "The CMH test does not detect an overall conditional association, but ",
-          "the heterogeneity test indicates that association patterns differ across strata. ",
-          "This may reflect opposing effects that cancel out when aggregated, or insufficient power. ",
-          "Examine stratum-specific chi-squared tests and V corrected values."
+          "'", strataVar, "' acts as an effect modifier: the association differs across strata",
+          if (reversal) ", and in some cells it reverses" else "",
+          ". Report stratum-specific V corrected values and residuals rather than the weighted average."
+        )
+      } else {
+        scenario <- "Heterogeneous Pattern Without Overall Association"
+        recommendation <- paste0(
+          "the homogeneity test indicates that the strata differ, but neither the pooled nor the CMH ",
+          "test finds an association within strata. This may reflect insufficient power. ",
+          "Examine the stratum-specific chi-squared tests and residuals."
         )
       }
       
@@ -1293,15 +1303,15 @@ chisqstrataRxCClass <- R6::R6Class(
     # Helper: Determine scenario label
     # ═══════════════════════════════════════════════════════════════════════════
     
-    .determineScenario = function(cmhSig, llSig) {
-      if (cmhSig && !llSig) {
-        return("Conditional dependence with homogeneity (Replication)")
-      } else if (cmhSig && llSig) {
-        return("Conditional dependence with heterogeneity (Interaction)")
-      } else if (!cmhSig && !llSig) {
+    .determineScenario = function(llSig, decideSig) {
+      if (!llSig && decideSig) {
+        return("Conditional dependence, no evidence of heterogeneity")
+      } else if (!llSig && !decideSig) {
         return("Conditional independence")
+      } else if (llSig && decideSig) {
+        return("Conditional dependence with heterogeneity (Interaction)")
       } else {
-        return("Conditional independence with heterogeneity (Opposing effects)")
+        return("Heterogeneity, but no association found within strata")
       }
     },
     
@@ -1332,7 +1342,7 @@ chisqstrataRxCClass <- R6::R6Class(
         <p>The analysis addresses two fundamental questions:</p>
         <ol>
           <li><strong>Conditional independence:</strong> Is there an association between the two categorical variables 
-          after controlling for the stratifying variable?</li>
+          in at least one stratum (conditional dependence), or in none (conditional independence)?</li>
           <li><strong>Homogeneity:</strong> Is the strength of association consistent 
           across strata, or does it vary (effect modification/interaction)?</li>
         </ol>
@@ -1359,13 +1369,15 @@ chisqstrataRxCClass <- R6::R6Class(
         
         <p>Confidence intervals are computed via bootstrap resampling of observations, 
         recalculating both \u03C7\u00B2 and \u03C7\u00B2<sub>max</sub> for each replicate since 
-        the marginals change with resampling. The resulting percentile-based confidence intervals 
+        the marginals change with resampling. Resampled tables in which a row or column is empty 
+        have no V<sub>corrected</sub> on the observed dimensions and are left out (a table note 
+        reports how many). The resulting percentile-based confidence intervals 
         are not necessarily symmetric around the point estimate; this asymmetry reflects the 
         shape of the bootstrap distribution rather than a computational error.</p>
         
         <p><strong>Important limitation:</strong> Because V<sub>corrected</sub> is a strictly 
         non-negative statistic (bounded between 0 and 1), the percentile bootstrap confidence 
-        interval cannot, by definition, include zero. This has two consequences for interpretation:</p>
+        interval cannot extend below zero. This has two consequences for interpretation:</p>
         <ul>
           <li><strong>For hypothesis testing:</strong> The confidence interval should <em>not</em> 
           be used to test whether the association is significantly different from zero. 
@@ -1392,17 +1404,19 @@ chisqstrataRxCClass <- R6::R6Class(
         <h3 style='color: #2874A6; margin-top: 1.5em;'>Generalised Cochran-Mantel-Haenszel (CMH) Test</h3>
         <p>The CMH test generalises to R\u00D7C\u00D7K tables, testing conditional independence 
         across all strata. The null hypothesis states that there is no association between 
-        the row and column variables in any stratum.</p>
+        the row and column variables in any stratum. It does not test whether the association is 
+        the same across strata, which is the job of the log-linear homogeneity test.</p>
         
         <p>For R\u00D7C tables, the test statistic follows a chi-squared distribution with 
-        (R\u22121)(C\u22121) degrees of freedom. A significant result indicates that, 
-        after controlling for the stratifying variable, there is evidence of association 
-        between the row and column variables (the generalised CMH test is most powerful when the 
+        (R\u22121)(C\u22121) degrees of freedom. A significant result indicates conditional 
+        dependence: evidence of association between the row and column variables in at least one 
+        stratum (the generalised CMH test is most powerful when the 
         association follows a similar pattern in each stratum; opposing patterns can cancel out).</p>
         
         <p>Unlike the 2\u00D72 case, the generalised CMH test does not provide a common 
         measure of effect size (such as a common odds ratio). Instead, summary association 
-        measures like the weighted average V<sub>corrected</sub> are used when homogeneity holds.</p>
+        measures like the weighted average V<sub>corrected</sub> are used when there is no evidence 
+        of heterogeneity.</p>
       ")
       
       # ─────────────────────────────────────────────────────────────────────────
@@ -1468,26 +1482,45 @@ chisqstrataRxCClass <- R6::R6Class(
       # ─────────────────────────────────────────────────────────────────────────
       
       html <- paste0(html, "
+        <h3 style='color: #2874A6; margin-top: 1.5em;'>Pooled Chi-Squared Test</h3>
+        <p>The pooled chi-squared test sums the chi-squared values of the partial tables (with the 
+        degrees of freedom summed likewise). The generalised CMH test combines the departures from 
+        independence of each cell across strata before squaring them, so a cell that is over-represented 
+        in one stratum and under-represented in another can cancel out; the pooled test squares within 
+        each stratum first, so it cannot. The pooled test is therefore the appropriate test of conditional 
+        dependence when the association differs across strata, whereas the CMH test is more powerful when 
+        the strata share the same pattern.</p>
+        
+        <p>With nominal variables there is no single direction of association to compare, as there is with 
+        the odds ratio of a 2\u00D72 table. The counterpart of an odds ratio reversing direction is a 
+        <em>pattern reversal</em>: a cell whose adjusted standardised residual is significantly positive 
+        (above 1.96) in one stratum and significantly negative (below \u22121.96) in another. The 
+        interpretation names any such cells. V<sub>corrected</sub> cannot show this, since it measures 
+        strength only.</p>
+        
         <h3 style='color: #2874A6; margin-top: 1.5em;'>Interpretational Scenarios</h3>
-        <p>The joint pattern of CMH and homogeneity test results leads to four interpretational scenarios:</p>
+        <p>The homogeneity test is read first, because it decides which test of conditional dependence 
+        applies (as shown in the diagnostic decision tree):</p>
         
         <ol>
-          <li><strong>Significant CMH with homogeneity:</strong> Indicates conditional dependence with 
-          consistent association across strata. The weighted average V<sub>corrected</sub> is a reliable summary.</li>
+          <li><strong>Homogeneity test not significant, CMH significant:</strong> conditional dependence with 
+          no evidence that the association differs across strata (a non-significant test cannot show that it 
+          is the same). The weighted average V<sub>corrected</sub> can be used as a summary; comparing it with 
+          the marginal V<sub>corrected</sub> shows whether controlling for the stratifying variable changes the 
+          strength of the association.</li>
           
-          <li><strong>Significant CMH with heterogeneity:</strong> Suggests conditional dependence but 
-          varying strength of association across strata (interaction). Stratum-specific V<sub>corrected</sub> 
-          values should be reported rather than the weighted average.</li>
+          <li><strong>Neither the homogeneity test nor the CMH test significant:</strong> no evidence of 
+          association within strata. If the marginal table shows an association, this is consistent with the 
+          stratifying variable accounting for it (confounding).</li>
           
-         <li><strong>Non-significant CMH with homogeneity:</strong> Implies conditional independence: 
-          no association is detected within strata. Any marginal association (if originally present) vanishes 
-          when the data are stratified.</li>
+          <li><strong>Homogeneity test significant, pooled test significant:</strong> the association is present 
+          within strata but differs across them (interaction, or effect modification). The CMH result (designed to 
+          detect a pattern common to all strata) is read with caution, or not interpreted when the pattern reverses. Report 
+          stratum-specific V<sub>corrected</sub> values and residuals rather than the weighted average.</li>
           
-          <li><strong>Non-significant CMH with heterogeneity:</strong> The most complex scenario. 
-          The overall CMH test does not detect association, but the association pattern varies across strata. 
-          This may indicate that associations exist in some strata but are absent or weaker in others, 
-          or that different patterns across strata obscure an overall effect. Stratum-specific chi-squared 
-          tests should be evaluated to understand the pattern.</li>
+          <li><strong>Homogeneity test significant, pooled test not significant:</strong> the strata appear to 
+          differ, but no association is found within them; this may reflect insufficient power. Examine the 
+          stratum-specific chi-squared tests and residuals.</li>
         </ol>
       ")
       
@@ -1579,133 +1612,40 @@ chisqstrataRxCClass <- R6::R6Class(
       return(plotData)
     },
     .forestPlot = function(image, ggtheme, theme, ...) {
-      
       plotData <- image$state
-      
       if (is.null(plotData)) {
         return(FALSE)
       }
       
-      n_points <- nrow(plotData)
+      # First stratum at the top
+      plotData$stratum <- factor(as.character(plotData$stratum),
+                                 levels = rev(as.character(plotData$stratum)))
+      # Circle for strata, square for the marginal table, diamond for the weighted average
+      plotData$type <- factor(plotData$type, levels = c("Stratum-specific", "Marginal", "Weighted"))
       
-      # Colour scheme for V corrected
-      # (CI-based significance colouring is not meaningful for non-negative statistics)
-      col_estimate <- "#D4AC0D"
-      col_ci <- "#2874A6"
+      # jamovi theme first: it carries its own colour scales, which would
+      # otherwise replace the manual scales below
+      plt <- ggplot2::ggplot(plotData, ggplot2::aes(y = stratum)) + ggtheme +
+        ggplot2::geom_vline(xintercept = 0, linetype = "dashed", colour = "#34495E", linewidth = 0.7) +
+        ggplot2::geom_errorbar(ggplot2::aes(xmin = ciLower, xmax = ciUpper),
+                               colour = "#2874A6", width = 0.25, linewidth = 0.7,
+                               orientation = "y", na.rm = TRUE) +
+        ggplot2::geom_point(ggplot2::aes(x = estimate, shape = type, size = type),
+                            colour = "#2874A6", fill = "#D4AC0D", na.rm = TRUE) +
+        ggplot2::scale_shape_manual(values = c("Stratum-specific" = 21, "Marginal" = 22, "Weighted" = 23),
+                                    name = NULL, drop = TRUE,
+                                    guide = ggplot2::guide_legend(override.aes = list(size = 3))) +
+        ggplot2::scale_size_manual(values = c("Stratum-specific" = 3, "Marginal" = 3.5, "Weighted" = 4),
+                                   guide = "none", drop = TRUE) +
+        ggplot2::scale_x_continuous(limits = c(0, 1), breaks = seq(0, 1, by = 0.2)) +
+        ggplot2::labs(x = expression(V[corrected]), y = NULL, title = "V Corrected Across Strata",
+                      caption = paste0("V corrected is non-negative, so its interval cannot test 'no association':\n",
+                                       "use the chi-squared tests for that. Overlapping intervals suggest similar strength.")) +
+        ggplot2::theme(plot.title = ggplot2::element_text(hjust = 0.5),
+                       plot.caption = ggplot2::element_text(hjust = 0, face = "italic"),
+                       legend.position = "bottom")
       
-      point_cols <- rep(col_estimate, nrow(plotData))
-      ci_cols <- rep(col_ci, nrow(plotData))
-      
-      # Define point shapes: circle=21 for strata, diamond=23 for weighted, square=22 for marginal
-      point_pch <- ifelse(plotData$type == "Weighted", 23,
-                          ifelse(plotData$type == "Marginal", 22, 21))
-      
-      # Define point sizes
-      point_cex <- ifelse(plotData$type == "Weighted", 1.6,
-                          ifelse(plotData$type == "Marginal", 1.4, 1.2))
-      
-      # V corrected is bounded 0-1, so always use full range
-      x_min <- 0
-      x_max <- 1
-      
-      # Calculate margins for labels
-      max_label_chars <- max(nchar(as.character(plotData$stratum)))
-      left_margin <- max(10, max_label_chars * 0.5)
-      
-      # Set up plot
-      par(
-        mar = c(4, left_margin, 3, 2) + 0.1,
-        family = "sans"
-      )
-      
-      # Y positions (reversed so first stratum appears at top)
-      y_pos <- rev(seq_len(n_points))
-      
-      # Create empty plot
-      plot(
-        x = NULL, y = NULL,
-        xlim = c(x_min, x_max),
-        ylim = c(0.5, n_points + 0.5),
-        xlab = "",
-        ylab = "",
-        axes = FALSE,
-        frame.plot = FALSE
-      )
-      
-      # Add vertical reference line at 0 (no association)
-      abline(v = 0, lty = 2, col = "#34495E", lwd = 1.5)
-      
-      # Add light horizontal grid lines for readability
-      abline(h = seq_len(n_points), col = "#E8E8E8", lwd = 0.5)
-      
-      # Draw confidence interval whiskers
-      segments(
-        x0 = plotData$ciLower,
-        x1 = plotData$ciUpper,
-        y0 = y_pos,
-        y1 = y_pos,
-        col = ci_cols,
-        lwd = 1.5
-      )
-      
-      # Draw whisker caps
-      cap_height <- 0.12
-      segments(
-        x0 = plotData$ciLower,
-        x1 = plotData$ciLower,
-        y0 = y_pos - cap_height,
-        y1 = y_pos + cap_height,
-        col = ci_cols,
-        lwd = 1.5
-      )
-      segments(
-        x0 = plotData$ciUpper,
-        x1 = plotData$ciUpper,
-        y0 = y_pos - cap_height,
-        y1 = y_pos + cap_height,
-        col = ci_cols,
-        lwd = 1.5
-      )
-      
-      # Draw point estimates
-      points(
-        x = plotData$estimate,
-        y = y_pos,
-        pch = point_pch,
-        col = ci_cols,
-        bg = col_estimate,
-        cex = point_cex
-      )
-      
-      # Add x-axis
-      axis_breaks <- seq(0, 1, by = 0.2)
-      axis_breaks <- axis_breaks[axis_breaks <= x_max]
-      axis(1, at = axis_breaks, col = "#808080", col.axis = "#505050")
-      
-      # Add y-axis with stratum labels
-      axis(2, at = y_pos, labels = plotData$stratum, las = 1, tick = FALSE,
-           col.axis = "#505050", cex.axis = 0.9)
-      
-      # Add axis label (V corrected with subscript)
-      mtext(expression(V[corrected]), side = 1, line = 2.5, col = "#505050")
-      
-      # Add title
-      mtext("V Corrected Across Strata", side = 3, line = 1,
-            font = 2, cex = 1.1, col = "#303030")
-      
-      # Add interpretive note instead of significance legend
-      legend(
-        "top",
-        legend = c(
-          "Note: V corrected is non-negative; CIs cannot include zero by definition.",
-          "Use chi-squared tests for significance. Overlapping CIs suggest similar strength."
-        ),
-        bty = "n",
-        cex = 0.80,
-        text.col = "#707070",
-        text.font = 3  
-      )
-      
+      print(plt)
       TRUE
     },
     
@@ -1718,7 +1658,8 @@ chisqstrataRxCClass <- R6::R6Class(
       # Retrieve state
       treeData <- image$state
       
-      if (is.null(treeData)) {
+      # (states saved by earlier versions used a different layout)
+      if (is.null(treeData) || is.null(treeData$decide_sig)) {
         return(FALSE)
       }
       
@@ -1728,24 +1669,24 @@ chisqstrataRxCClass <- R6::R6Class(
         x = c(2, 1, 3, 0.5, 1.5, 2.5, 3.5),  # Horizontal positions
         y = c(4, 2, 2, 0, 0, 0, 0),  # Vertical positions (4=top, 0=bottom)
         label = c(
+          "Homogeneity Test\n(Log-Linear)",
           "CMH Test",
-          "Homogeneity Test\n(Log-Linear)",
-          "Homogeneity Test\n(Log-Linear)",
-          "Conditional independence:\nAssociation (if any) vanishes\nwhen stratified",
-          "Opposing associations:\nEffects cancel across strata",
-          "Homogeneous association:\nConsistent relationship\n(replication) across strata",
-          "Heterogeneous association:\nEffect modification\n(interaction) present"
+          "Pooled \u03C7\u00B2 Test",
+          "Conditional independence:\nno evidence of association\nwithin strata",
+          "Homogeneous association:\nno evidence that it\ndiffers across strata",
+          "Heterogeneity, but no\nassociation found\nwithin strata",
+          "Heterogeneous association:\neffect modification\n(interaction) present"
         ),
         node_type = c("decision", "decision", "decision", 
                       "terminal", "terminal", "terminal", "terminal"),
         is_active = c(
-          TRUE,  # CMH always evaluated
-          !treeData$cmh_sig,  # Left homogeneity (if CMH non-sig)
-          treeData$cmh_sig,   # Right homogeneity (if CMH sig)
-          !treeData$cmh_sig && !treeData$loglin_sig,  # Scenario 3
-          !treeData$cmh_sig && treeData$loglin_sig,   # Scenario 4
-          treeData$cmh_sig && !treeData$loglin_sig,   # Scenario 1
-          treeData$cmh_sig && treeData$loglin_sig     # Scenario 2
+          TRUE,                                         # homogeneity always evaluated
+          !treeData$loglin_sig,                         # CMH decides (no heterogeneity)
+          treeData$loglin_sig,                          # pooled test decides (heterogeneity)
+          !treeData$loglin_sig && !treeData$decide_sig,
+          !treeData$loglin_sig && treeData$decide_sig,
+          treeData$loglin_sig && !treeData$decide_sig,
+          treeData$loglin_sig && treeData$decide_sig
         ),
         stringsAsFactors = FALSE
       )
@@ -1765,12 +1706,12 @@ chisqstrataRxCClass <- R6::R6Class(
           "p < .05"
         ),
         is_active = c(
-          !treeData$cmh_sig,
-          treeData$cmh_sig,
-          !treeData$cmh_sig && !treeData$loglin_sig,
-          !treeData$cmh_sig && treeData$loglin_sig,
-          treeData$cmh_sig && !treeData$loglin_sig,
-          treeData$cmh_sig && treeData$loglin_sig
+          !treeData$loglin_sig,
+          treeData$loglin_sig,
+          !treeData$loglin_sig && !treeData$decide_sig,
+          !treeData$loglin_sig && treeData$decide_sig,
+          treeData$loglin_sig && !treeData$decide_sig,
+          treeData$loglin_sig && treeData$decide_sig
         ),
         stringsAsFactors = FALSE
       )

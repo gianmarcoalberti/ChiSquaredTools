@@ -89,7 +89,7 @@ options:
             If not provided, data are assumed to be in long format (one row per case).
 
     - name: plotRowDendro
-      title: Plot row dendrogram
+      title: Row dendrogram
       type: Bool
       default: false
       description:
@@ -98,7 +98,7 @@ options:
             for table rows with critical value cutoff line
 
     - name: plotColDendro
-      title: Plot column dendrogram
+      title: Column dendrogram
       type: Bool
       default: false
       description:

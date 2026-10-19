@@ -117,7 +117,9 @@ chisqclusterClass <- R6::R6Class(
         self$results$rowDendro$setState(private$.dendroState(row_result))
       }, error = function(e) {
         self$results$rowClusterTable$setNote('clusterError', 
-                                             paste0("Row clustering error: ", e$message), init = FALSE)
+                                             paste0("Row clustering is not available: ", e$message), init = FALSE)
+        # Nothing to draw: hide the dendrogram rather than leave it blank
+        self$results$rowDendro$setVisible(FALSE)
       })
       
       # Perform clustering analysis - column clustering
@@ -129,7 +131,9 @@ chisqclusterClass <- R6::R6Class(
         self$results$colDendro$setState(private$.dendroState(col_result))
       }, error = function(e) {
         self$results$colClusterTable$setNote('clusterError', 
-                                             paste0("Column clustering error: ", e$message), init = FALSE)
+                                             paste0("Column clustering is not available: ", e$message), init = FALSE)
+        # Nothing to draw: hide the dendrogram rather than leave it blank
+        self$results$colDendro$setVisible(FALSE)
       })
       
       # Populate method info and references

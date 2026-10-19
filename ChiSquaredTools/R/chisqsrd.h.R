@@ -11,7 +11,7 @@ chisqsrdOptions <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class(
             counts = NULL,
             alpha = 0.05,
             doPruning = FALSE,
-            showMethodInfo = TRUE, ...) {
+            showMethodInfo = FALSE, ...) {
 
             super$initialize(
                 package="ChiSquaredTools",
@@ -53,7 +53,7 @@ chisqsrdOptions <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class(
             private$..showMethodInfo <- jmvcore::OptionBool$new(
                 "showMethodInfo",
                 showMethodInfo,
-                default=TRUE)
+                default=FALSE)
 
             self$.addOption(private$..rows)
             self$.addOption(private$..cols)
@@ -467,7 +467,7 @@ chisqsrd <- function(
     counts,
     alpha = 0.05,
     doPruning = FALSE,
-    showMethodInfo = TRUE) {
+    showMethodInfo = FALSE) {
 
     if ( ! requireNamespace("jmvcore", quietly=TRUE))
         stop("chisqsrd requires jmvcore to be installed (restart may be required)")

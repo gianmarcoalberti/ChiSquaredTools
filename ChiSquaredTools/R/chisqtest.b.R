@@ -13,6 +13,7 @@ chisqtestClass <- R6::R6Class(
     
     # Table structure cache
     .rowLevels = NULL,
+    .pcTypes = NULL,
     .colLevels = NULL,
     .I = NULL,
     .J = NULL,
@@ -51,18 +52,41 @@ chisqtestClass <- R6::R6Class(
       # 2. Pre-build crosstabTable with full structure
       # -----------------------------------------------------------------
       crosstab <- self$results$crosstabTable
-      crosstab$setTitle(paste0("Observed Frequencies: ", rowVar, " × ", colVar))
+      anyPct <- self$options$pctRow || self$options$pctCol || self$options$pctTotal
+      crosstab$setTitle(paste0(if (anyPct) "Observed Frequencies and Percentages: " else
+                                 "Observed Frequencies: ", rowVar, " × ", colVar))
+      
+      # Columns named 'x[count]', 'x[pcRow]', ... are folded by jamovi into
+      # sub-rows of the same row (as in jamovi's own Contingency Tables);
+      # the percentage sub-rows appear only when their option is ticked
+      pcTypes <- list(
+        list(key = 'count',   label = 'Observed',          visible = '(pctRow || pctCol || pctTotal)'),
+        list(key = 'pcRow',   label = '% within row',      visible = '(pctRow)'),
+        list(key = 'pcCol',   label = '% within column',   visible = '(pctCol)'),
+        list(key = 'pcTotal', label = '% of total',        visible = '(pctTotal)'))
+      private$.pcTypes <- pcTypes
       
       crosstab$addColumn(name = 'rowname', title = rowVar, type = 'text')
-      for (j in seq_len(J)) {
-        crosstab$addColumn(
-          name = paste0('col', j),
-          title = col_levels[j],
-          type = 'integer',
-          superTitle = colVar
-        )
+      for (pt in pcTypes)
+        crosstab$addColumn(name = paste0('type[', pt$key, ']'), title = '',
+                           type = 'text', visible = pt$visible)
+      for (j in c(seq_len(J), 0)) {
+        base <- if (j == 0) 'rowtotal' else paste0('col', j)
+        for (pt in pcTypes) {
+          if (pt$key == 'count') {
+            crosstab$addColumn(name = paste0(base, '[count]'),
+                               title = if (j == 0) 'Total' else col_levels[j],
+                               type = 'integer',
+                               superTitle = if (j == 0) NULL else colVar)
+          } else {
+            crosstab$addColumn(name = paste0(base, '[', pt$key, ']'),
+                               title = if (j == 0) 'Total' else col_levels[j],
+                               type = 'number', format = 'pc',
+                               superTitle = if (j == 0) NULL else colVar,
+                               visible = pt$visible)
+          }
+        }
       }
-      crosstab$addColumn(name = 'rowtotal', title = 'Total', type = 'integer')
       
       # Pre-add rows with placeholders
       for (i in seq_len(I)) {
@@ -205,23 +229,30 @@ chisqtestClass <- R6::R6Class(
       I <- nrow(contingency_table)
       J <- ncol(contingency_table)
       
-      # Use setRow() to update pre-built rows
-      for (i in 1:I) {
-        row_values <- list()
-        for (j in 1:J) {
-          row_values[[paste0("col", j)]] <- contingency_table[i, j]
+      n <- sum(contingency_table)
+      row_tot <- rowSums(contingency_table)
+      col_tot <- colSums(contingency_table)
+      
+      # Counts and the three kinds of percentages (as proportions; the
+      # columns use jamovi's 'pc' format) for one row of the table
+      cellValues <- function(counts, rowTotal) {
+        v <- list()
+        for (pt in private$.pcTypes) v[[paste0('type[', pt$key, ']')]] <- pt$label
+        for (j in c(seq_len(J), 0)) {
+          base <- if (j == 0) 'rowtotal' else paste0('col', j)
+          x <- if (j == 0) sum(counts) else counts[j]
+          colTotal <- if (j == 0) n else col_tot[j]
+          v[[paste0(base, '[count]')]] <- x
+          v[[paste0(base, '[pcRow]')]] <- if (rowTotal > 0) x / rowTotal else NaN
+          v[[paste0(base, '[pcCol]')]] <- if (colTotal > 0) x / colTotal else NaN
+          v[[paste0(base, '[pcTotal]')]] <- x / n
         }
-        row_values[['rowtotal']] <- sum(contingency_table[i, ])
-        table$setRow(rowKey = i, values = row_values)
+        v
       }
       
-      # Update total row
-      total_values <- list()
-      for (j in 1:J) {
-        total_values[[paste0("col", j)]] <- sum(contingency_table[, j])
-      }
-      total_values[['rowtotal']] <- sum(contingency_table)
-      table$setRow(rowKey = 'total', values = total_values)
+      for (i in 1:I)
+        table$setRow(rowKey = i, values = cellValues(contingency_table[i, ], row_tot[i]))
+      table$setRow(rowKey = 'total', values = cellValues(col_tot, n))
     },
     
     .populateExpectedTable = function(expected) {
@@ -389,7 +420,10 @@ chisqtestClass <- R6::R6Class(
       if (!is.null(permImage$state) && !is.null(permImage$state$perm_stats)) {
         private$.permStats <- permImage$state$perm_stats
       }
-      if (!is.null(mcImage$state) && !is.null(mcImage$state$mc_stats)) {
+      # (states saved before 1.2.1 lack n_redrawn and scored degenerate tables as 0,
+      # so they are recomputed)
+      if (!is.null(mcImage$state) && !is.null(mcImage$state$mc_stats) &&
+          !is.null(mcImage$state$n_redrawn)) {
         private$.mcStats <- mcImage$state$mc_stats
       }
       
@@ -418,6 +452,25 @@ chisqtestClass <- R6::R6Class(
         ))
       }
       
+      # The permutation and Monte Carlo tests resample individual cases, so
+      # they need whole-number counts: non-integer counts are rounded for
+      # these two tests only (a note reports it)
+      obs_rs <- round(observed)
+      nonInteger <- any(abs(observed - obs_rs) > 1e-8)
+      if (nonInteger) {
+        n_rs <- sum(obs_rs)
+        e_rs <- outer(rowSums(obs_rs), colSums(obs_rs)) / n_rs
+        stat_rs <- sum((obs_rs - e_rs)^2 / e_rs)
+      } else {
+        n_rs <- n
+        stat_rs <- chisq_stat
+      }
+      if (nonInteger && (self$options$permTest || self$options$monteCarloTest)) {
+        table$setNote(key = "rounded", note = "The counts are not whole numbers: they were rounded to integers for the permutation and Monte Carlo tests.", init = FALSE)
+      } else {
+        table$setNote(key = "rounded", note = NULL, init = FALSE)
+      }
+      
       # Permutation test
       if (self$options$permTest) {
         
@@ -425,19 +478,19 @@ chisqtestClass <- R6::R6Class(
         if (!is.null(private$.permStats)) {
           # Already restored from cache above
           perm_stats <- private$.permStats
-          B_extreme <- sum(perm_stats >= chisq_stat)
+          B_extreme <- sum(perm_stats >= stat_rs)
           p_perm <- (B_extreme + 1) / (length(perm_stats) + 1)
           # States saved by older versions lack the observed statistic
           if (is.null(permImage$state$observed))
             permImage$setState(list(perm_stats = perm_stats, p_perm = p_perm,
-                                    observed = chisq_stat))
+                                    observed = stat_rs))
         } else {
           # No cache - run expensive computation
           set.seed(self$options$seed)
           
-          row_indices <- rep(1:nrow(observed), times = rowSums(observed))
-          col_indices <- unlist(lapply(1:nrow(observed), function(i) {
-            rep(1:ncol(observed), times = observed[i, ])
+          row_indices <- rep(1:nrow(obs_rs), times = rowSums(obs_rs))
+          col_indices <- unlist(lapply(1:nrow(obs_rs), function(i) {
+            rep(1:ncol(obs_rs), times = obs_rs[i, ])
           }))
           
           B <- self$options$nPerms
@@ -448,21 +501,21 @@ chisqtestClass <- R6::R6Class(
             perm_table <- table(row_indices, perm_col_indices)
             perm_row_totals <- rowSums(perm_table)
             perm_col_totals <- colSums(perm_table)
-            perm_expected <- outer(perm_row_totals, perm_col_totals) / n
+            perm_expected <- outer(perm_row_totals, perm_col_totals) / n_rs
             perm_stats[b] <- sum((perm_table - perm_expected)^2 / perm_expected)
           }
           
-          B_extreme <- sum(perm_stats >= chisq_stat)
+          B_extreme <- sum(perm_stats >= stat_rs)
           p_perm <- (B_extreme + 1) / (B + 1)
           
           private$.permStats <- perm_stats
           permImage$setState(list(perm_stats = perm_stats, p_perm = p_perm,
-                                  observed = chisq_stat))
+                                  observed = stat_rs))
         }
         
         table$setRow(rowKey = 'permutation', values = list(
           method = paste0('Permutation (', self$options$nPerms, ' permutations)'),
-          statistic = chisq_stat,
+          statistic = stat_rs,
           df = df,
           mstat = '',
           pvalue = p_perm
@@ -476,12 +529,9 @@ chisqtestClass <- R6::R6Class(
         if (!is.null(private$.mcStats)) {
           # Already restored from cache above
           mc_stats <- private$.mcStats
-          B_extreme <- sum(mc_stats >= chisq_stat)
+          B_extreme <- sum(mc_stats >= stat_rs)
           p_mc <- (B_extreme + 1) / (length(mc_stats) + 1)
-          # States saved by older versions lack the observed statistic
-          if (is.null(mcImage$state$observed))
-            mcImage$setState(list(mc_stats = mc_stats, p_mc = p_mc,
-                                  observed = chisq_stat))
+
         } else {
           # No cache - run expensive computation
           set.seed(self$options$seed)
@@ -489,46 +539,65 @@ chisqtestClass <- R6::R6Class(
           B <- self$options$nPerms
           mc_stats <- numeric(B)
           
-          row_probs <- rowSums(observed) / n
-          col_probs <- colSums(observed) / n
+          row_probs <- rowSums(obs_rs) / n_rs
+          col_probs <- colSums(obs_rs) / n_rs
           
           # Under independence each case falls in cell (i, j) with probability
           # row_prob[i] * col_prob[j]; drawing n cases one at a time is
           # equivalent to one multinomial draw, which is far faster for large n
           cell_probs <- as.vector(outer(row_probs, col_probs))
+          n_mc <- n_rs
+          n_redrawn <- 0
           
           for (b in 1:B) {
-            mc_table <- matrix(stats::rmultinom(1, round(n), cell_probs),
-                               nrow = nrow(observed), ncol = ncol(observed))
-            
-            mc_row_totals <- rowSums(mc_table)
-            mc_col_totals <- colSums(mc_table)
-            
+            # A simulated table with an empty row or column has no chi-squared
+            # statistic on the observed table's dimensions; such tables are
+            # redrawn, so the reference distribution is conditional on every
+            # row and column being non-empty (as in the observed table)
+            for (attempt in 1:1000) {
+              mc_table <- matrix(stats::rmultinom(1, n_mc, cell_probs),
+                                 nrow = nrow(obs_rs), ncol = ncol(obs_rs))
+              mc_row_totals <- rowSums(mc_table)
+              mc_col_totals <- colSums(mc_table)
+              if (all(mc_row_totals > 0) && all(mc_col_totals > 0)) break
+              n_redrawn <- n_redrawn + 1
+            }
             if (any(mc_row_totals == 0) || any(mc_col_totals == 0)) {
-              mc_stats[b] <- 0
+              mc_stats[b] <- NA_real_
               next
             }
-            
-            mc_expected <- outer(mc_row_totals, mc_col_totals) / n
+            mc_expected <- outer(mc_row_totals, mc_col_totals) / n_mc
             mc_stats[b] <- sum((mc_table - mc_expected)^2 / mc_expected)
           }
+          mc_stats <- mc_stats[!is.na(mc_stats)]
+          B <- length(mc_stats)
           
-          B_extreme <- sum(mc_stats >= chisq_stat)
+          B_extreme <- sum(mc_stats >= stat_rs)
           p_mc <- (B_extreme + 1) / (B + 1)
           
           private$.mcStats <- mc_stats
           mcImage$setState(list(mc_stats = mc_stats, p_mc = p_mc,
-                                observed = chisq_stat))
+                                observed = stat_rs, n_redrawn = n_redrawn))
         }
         
+        n_redrawn <- mcImage$state$n_redrawn
+        if (isTRUE(n_redrawn > 0)) {
+          table$setNote(key = "mc_redraw", note = sprintf(
+            "Monte Carlo: %d simulated table(s) with an empty row or column were redrawn.", n_redrawn), init = FALSE)
+        } else {
+          table$setNote(key = "mc_redraw", note = NULL, init = FALSE)
+        }
         table$setRow(rowKey = 'montecarlo', values = list(
           method = paste0('Monte Carlo (', self$options$nPerms, ' simulations)'),
-          statistic = chisq_stat,
+          statistic = stat_rs,
           df = df,
           mstat = '',
           pvalue = p_mc
         ))
       }
+      
+      if (!self$options$monteCarloTest)
+        table$setNote(key = "mc_redraw", note = NULL, init = FALSE)
       
       # M Test (Fuchs & Kenett, 1980)
       if (self$options$mTest) {
@@ -591,7 +660,7 @@ chisqtestClass <- R6::R6Class(
       }
     },
     
-    .plotPermDist = function(image, ...) {
+    .plotPermDist = function(image, ggtheme, theme, ...) {
       
       # Read from the image state (private fields are NULL on export)
       st <- image$state
@@ -599,109 +668,14 @@ chisqtestClass <- R6::R6Class(
         return(FALSE)
       }
       
-      perm_stats <- st$perm_stats
-      observed_chisq <- st$observed
-      
-      # Create histogram
-      hist_data <- hist(perm_stats, plot = FALSE, breaks = 30)
-      
-      plot(hist_data,
-           main = "Permutation Distribution of χ² Statistic",
-           xlab = "χ² Statistic",
-           ylab = "Frequency",
-           col = "lightblue",
-           border = "white")
-      
-      # Determine plot x-axis range
-      x_max <- max(hist_data$breaks)
-      
-      # Calculate p-value (needed for all cases)
-      B_extreme <- sum(perm_stats >= observed_chisq)
-      p_perm <- (B_extreme + 1) / (length(perm_stats) + 1)
-      
-      # Three-way logic: well inside / near edge / off-scale
-      if (observed_chisq <= x_max * 0.9) {
-        # Case 1: Observed value well inside plot range
-        # Draw line with text to the RIGHT
-        abline(v = observed_chisq, col = "red", lwd = 2, lty = 2)
-        
-        legend("topright",
-               legend = c("Permuted χ²", "Observed χ²"),
-               col = c("lightblue", "red"),
-               lwd = c(10, 2),
-               lty = c(1, 2),
-               bty = "n")
-        
-        text(x = observed_chisq, 
-             y = max(hist_data$counts) * 0.7,
-             labels = if (p_perm < 0.001) {
-               "p < 0.001"
-             } else {
-               sprintf("p = %.3f", p_perm)
-             },
-             pos = 4,  # Text to the RIGHT of line
-             col = "red",
-             font = 2)
-        
-      } else if (observed_chisq <= x_max) {
-        # Case 2: Observed value near right edge but still on-scale
-        # Draw line with text to the LEFT to avoid truncation
-        abline(v = observed_chisq, col = "red", lwd = 2, lty = 2)
-        
-        legend("topright",
-               legend = c("Permuted χ²", "Observed χ²"),
-               col = c("lightblue", "red"),
-               lwd = c(10, 2),
-               lty = c(1, 2),
-               bty = "n")
-        
-        text(x = observed_chisq, 
-             y = max(hist_data$counts) * 0.7,
-             labels = if (p_perm < 0.001) {
-               "p < 0.001"
-             } else {
-               sprintf("p = %.3f", p_perm)
-             },
-             pos = 2,  # Text to the LEFT of line (avoids right margin)
-             col = "red",
-             font = 2)
-        
-      } else {
-        # Case 3: Observed value is off-scale
-        # Draw arrow + annotation at plot boundary
-        legend("topright",
-               legend = c("Permuted χ²"),
-               col = c("lightblue"),
-               lwd = c(10),
-               lty = c(1),
-               bty = "n")
-        
-        # Add arrow at right edge pointing rightward
-        y_arrow <- max(hist_data$counts) * 0.5
-        arrows(x0 = x_max * 0.95, y0 = y_arrow, 
-               x1 = x_max * 0.99, y1 = y_arrow,
-               col = "red", lwd = 2, length = 0.15, angle = 20)
-        
-        # Add text annotation
-        p_text <- if (p_perm < 0.001) {
-          "< 0.001"
-        } else {
-          sprintf("%.3f", p_perm)
-        }
-        
-        text(x = x_max * 0.92, 
-             y = y_arrow,
-             labels = sprintf("Obs. χ² = %.2f\n(off scale)\np = %s", observed_chisq, p_text),
-             pos = 2,
-             col = "red",
-             font = 2,
-             cex = 0.9)
-      }
-      
+      plt <- .ctDistPlot(st$perm_stats, st$observed,
+                         title = "Permutation Distribution of \u03c7\u00b2 Statistic",
+                         label = "\u03c7\u00b2", fill = "#85C1E9", ggtheme = ggtheme)
+      print(plt)
       TRUE
     },
     
-    .plotMCDist = function(image, ...) {
+    .plotMCDist = function(image, ggtheme, theme, ...) {
       
       # Read from the image state (private fields are NULL on export)
       st <- image$state
@@ -709,105 +683,10 @@ chisqtestClass <- R6::R6Class(
         return(FALSE)
       }
       
-      mc_stats <- st$mc_stats
-      observed_chisq <- st$observed
-      
-      # Create histogram
-      hist_data <- hist(mc_stats, plot = FALSE, breaks = 30)
-      
-      plot(hist_data,
-           main = "Monte Carlo Distribution of χ² Statistic",
-           xlab = "χ² Statistic",
-           ylab = "Frequency",
-           col = "lightgreen",
-           border = "white")
-      
-      # Determine plot x-axis range
-      x_max <- max(hist_data$breaks)
-      
-      # Calculate p-value (needed for all cases)
-      B_extreme <- sum(mc_stats >= observed_chisq)
-      p_mc <- (B_extreme + 1) / (length(mc_stats) + 1)
-      
-      # Three-way logic: well inside / near edge / off-scale
-      if (observed_chisq <= x_max * 0.9) {
-        # Case 1: Observed value well inside plot range
-        # Draw line with text to the RIGHT
-        abline(v = observed_chisq, col = "red", lwd = 2, lty = 2)
-        
-        legend("topright",
-               legend = c("Monte Carlo χ²", "Observed χ²"),
-               col = c("lightgreen", "red"),
-               lwd = c(10, 2),
-               lty = c(1, 2),
-               bty = "n")
-        
-        text(x = observed_chisq, 
-             y = max(hist_data$counts) * 0.7,
-             labels = if (p_mc < 0.001) {
-               "p < 0.001"
-             } else {
-               sprintf("p = %.3f", p_mc)
-             },
-             pos = 4,  # Text to the RIGHT of line
-             col = "red",
-             font = 2)
-        
-      } else if (observed_chisq <= x_max) {
-        # Case 2: Observed value near right edge but still on-scale
-        # Draw line with text to the LEFT to avoid truncation
-        abline(v = observed_chisq, col = "red", lwd = 2, lty = 2)
-        
-        legend("topright",
-               legend = c("Monte Carlo χ²", "Observed χ²"),
-               col = c("lightgreen", "red"),
-               lwd = c(10, 2),
-               lty = c(1, 2),
-               bty = "n")
-        
-        text(x = observed_chisq, 
-             y = max(hist_data$counts) * 0.7,
-             labels = if (p_mc < 0.001) {
-               "p < 0.001"
-             } else {
-               sprintf("p = %.3f", p_mc)
-             },
-             pos = 2,  # Text to the LEFT of line (avoids right margin)
-             col = "red",
-             font = 2)
-        
-      } else {
-        # Case 3: Observed value is off-scale
-        # Draw arrow + annotation at plot boundary
-        legend("topright",
-               legend = c("Monte Carlo χ²"),
-               col = c("lightgreen"),
-               lwd = c(10),
-               lty = c(1),
-               bty = "n")
-        
-        # Add arrow at right edge pointing rightward
-        y_arrow <- max(hist_data$counts) * 0.5
-        arrows(x0 = x_max * 0.95, y0 = y_arrow, 
-               x1 = x_max * 0.99, y1 = y_arrow,
-               col = "red", lwd = 2, length = 0.15, angle = 20)
-        
-        # Add text annotation
-        p_text <- if (p_mc < 0.001) {
-          "< 0.001"
-        } else {
-          sprintf("%.3f", p_mc)
-        }
-        
-        text(x = x_max * 0.92, 
-             y = y_arrow,
-             labels = sprintf("Obs. χ² = %.2f\n(off scale)\np = %s", observed_chisq, p_text),
-             pos = 2,
-             col = "red",
-             font = 2,
-             cex = 0.9)
-      }
-      
+      plt <- .ctDistPlot(st$mc_stats, st$observed,
+                         title = "Monte Carlo Distribution of \u03c7\u00b2 Statistic",
+                         label = "\u03c7\u00b2", fill = "#82E0AA", ggtheme = ggtheme)
+      print(plt)
       TRUE
     },
     
@@ -875,7 +754,9 @@ chisqtestClass <- R6::R6Class(
                        "adjusted using the Phipson & Smyth 2010 method: p = (B + 1)/(m + 1), where B is the number of ",
                        "permuted statistics at least as extreme as the observed statistic, and m is the ",
                        "total number of permutations. This ensures p-values are never exactly zero and ",
-                       "Type I error rates are correctly controlled.</p>")
+                       "Type I error rates are correctly controlled. Because the permutation and Monte Carlo tests ",
+                       "resample individual cases, non-integer counts are rounded to whole numbers for these two tests ",
+                       "(a table note reports it).</p>")
         html <- paste0(html, "<p style='margin-bottom: 12px;'><strong>When to use:</strong> Permutation tests are distribution-free and particularly useful ",
                        "when sample sizes are small or expected frequencies are low (minimum expected < 1), making asymptotic ",
                        "approximations unreliable.</p>")
@@ -886,11 +767,13 @@ chisqtestClass <- R6::R6Class(
       if (self$options$monteCarloTest) {
         html <- paste0(html, "<h4 style='color: #3E6DA6;'>Monte Carlo Test</h4>")
         html <- paste0(html, "<p style='margin-bottom: 12px;'><strong>Rationale:</strong> The Monte Carlo test generates random contingency tables under the ",
-                       "null hypothesis of independence (", self$options$nPerms, " simulated tables) by sampling ",
-                       "from the marginal distributions. For each simulated table, the chi-squared statistic ",
+                       "null hypothesis of independence (", self$options$nPerms, " simulated tables): each table distributes the N cases over the cells ",
+                       "with probabilities equal to the products of the observed row and column proportions (a parametric bootstrap of the independence model). ",
+                       "Only the total N is held fixed, so, unlike the permutation test, which keeps both sets of margins fixed, the row and column totals vary from table to table. ",
+                       "Simulated tables with an empty row or column are redrawn. For each simulated table, the chi-squared statistic ",
                        "is calculated, creating an empirical null distribution. The p-value represents the proportion of simulated statistics ",
-                       "at least as extreme as the observed statistic. P-values are computed using the Phipson & Smyth 2010 method, ",
-                       "ensuring accurate Type I error control and avoiding zero p-values.</p>")
+                       "at least as extreme as the observed statistic, computed as (B + 1)/(m + 1) following Phipson & Smyth 2010, ",
+                       "which avoids p-values of exactly zero.</p>")
         html <- paste0(html, "<p style='margin-bottom: 12px;'><strong>When to use:</strong> Monte Carlo tests are particularly useful for sparse tables ",
                        "or when cell counts are very small (minimum expected < 1), providing simulation-based p-values (approximations whose precision grows with the number of replicates) without relying on ",
                        "asymptotic approximations.</p>")

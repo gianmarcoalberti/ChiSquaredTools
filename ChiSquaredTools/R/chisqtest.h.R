@@ -16,6 +16,9 @@ chisqtestOptions <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class(
             mTest = FALSE,
             nPerms = 999,
             seed = 123,
+            pctRow = FALSE,
+            pctCol = FALSE,
+            pctTotal = FALSE,
             showDistributions = FALSE,
             showMethodInfo = FALSE, ...) {
 
@@ -78,6 +81,18 @@ chisqtestOptions <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class(
                 min=1,
                 max=999999,
                 default=123)
+            private$..pctRow <- jmvcore::OptionBool$new(
+                "pctRow",
+                pctRow,
+                default=FALSE)
+            private$..pctCol <- jmvcore::OptionBool$new(
+                "pctCol",
+                pctCol,
+                default=FALSE)
+            private$..pctTotal <- jmvcore::OptionBool$new(
+                "pctTotal",
+                pctTotal,
+                default=FALSE)
             private$..showDistributions <- jmvcore::OptionBool$new(
                 "showDistributions",
                 showDistributions,
@@ -97,6 +112,9 @@ chisqtestOptions <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class(
             self$.addOption(private$..mTest)
             self$.addOption(private$..nPerms)
             self$.addOption(private$..seed)
+            self$.addOption(private$..pctRow)
+            self$.addOption(private$..pctCol)
+            self$.addOption(private$..pctTotal)
             self$.addOption(private$..showDistributions)
             self$.addOption(private$..showMethodInfo)
         }),
@@ -111,6 +129,9 @@ chisqtestOptions <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class(
         mTest = function() private$..mTest$value,
         nPerms = function() private$..nPerms$value,
         seed = function() private$..seed$value,
+        pctRow = function() private$..pctRow$value,
+        pctCol = function() private$..pctCol$value,
+        pctTotal = function() private$..pctTotal$value,
         showDistributions = function() private$..showDistributions$value,
         showMethodInfo = function() private$..showMethodInfo$value),
     private = list(
@@ -124,6 +145,9 @@ chisqtestOptions <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class(
         ..mTest = NA,
         ..nPerms = NA,
         ..seed = NA,
+        ..pctRow = NA,
+        ..pctCol = NA,
+        ..pctTotal = NA,
         ..showDistributions = NA,
         ..showMethodInfo = NA)
 )
@@ -339,16 +363,14 @@ chisqtestBase <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class(
 #' 
 #'
 #' @examples
-#' # Example with Titanic data
-#' data('Titanic')
-#' titanic_df <- as.data.frame(Titanic)
-#' titanic_expanded <- titanic_df[rep(seq_len(nrow(titanic_df)),
-#'                                    titanic_df$Freq), 1:4]
+#' # Example with the Titanic data (one row per cell, counts in 'Freq')
+#' titanic_df <- as.data.frame(datasets::Titanic)
 #'
-#' chisqtest(
-#'     data = titanic_expanded,
+#' ChiSquaredTools::chisqtest(
+#'     data = titanic_df,
 #'     rows = 'Class',
 #'     cols = 'Survived',
+#'     counts = 'Freq',
 #'     traditionalTest = TRUE,
 #'     n1Test = TRUE,
 #'     permTest = TRUE,
@@ -378,6 +400,12 @@ chisqtestBase <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class(
 #' @param nPerms number of permutations or Monte Carlo replications (default:
 #'   999)
 #' @param seed random seed for reproducibility (default: 123)
+#' @param pctRow TRUE or FALSE (default: FALSE), show row percentages in the
+#'   observed contingency table
+#' @param pctCol TRUE or FALSE (default: FALSE), show column percentages in
+#'   the observed contingency table
+#' @param pctTotal TRUE or FALSE (default: FALSE), show percentages of the
+#'   grand total in the observed contingency table
 #' @param showDistributions TRUE or FALSE (default: FALSE), plot distributions
 #'   of permutation and Monte Carlo test statistics
 #' @param showMethodInfo TRUE or FALSE (default: FALSE), display detailed
@@ -413,6 +441,9 @@ chisqtest <- function(
     mTest = FALSE,
     nPerms = 999,
     seed = 123,
+    pctRow = FALSE,
+    pctCol = FALSE,
+    pctTotal = FALSE,
     showDistributions = FALSE,
     showMethodInfo = FALSE) {
 
@@ -443,6 +474,9 @@ chisqtest <- function(
         mTest = mTest,
         nPerms = nPerms,
         seed = seed,
+        pctRow = pctRow,
+        pctCol = pctCol,
+        pctTotal = pctTotal,
         showDistributions = showDistributions,
         showMethodInfo = showMethodInfo)
 

@@ -1,8 +1,8 @@
 Package: ChiSquaredTools
 Type: Package
 Title: Chi-Squared Analysis Tools
-Version: 1.2.0
-Date: 2026-10-10
+Version: 1.2.1
+Date: 2026-10-13
 Author: Gianmarco Alberti
 Maintainer: Gianmarco Alberti <gianmarcoalberti@gmail.com>
 Description: Comprehensive toolkit for chi-squared analysis of contingency tables.
@@ -31,4 +31,6 @@ Description: Comprehensive toolkit for chi-squared analysis of contingency table
 License: GPL (>= 3)
 Encoding: UTF-8
 LazyData: true
-Imports: jmvcore, R6, stats, graphics, grDevices, utils, ggplot2, ggdendro, ggrepel, scales
+Imports: jmvcore, R6, stats, graphics, grDevices, grid, utils, ggplot2, ggdendro, ggrepel, scales
+Suggests: testthat (>= 3.0.0)
+Config/roxygen2/version: 8.0.0

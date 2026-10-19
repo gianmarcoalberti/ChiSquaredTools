@@ -117,6 +117,10 @@ items:
         - name: value
           title: 'Value'
           type: number
+        - name: valueNcp
+          title: 'Value (λ̂)'
+          type: number
+          visible: (phi || phiSigned || contingencyC || cramersV || cohenW)
         - name: lowerCI
           title: 'Lower CI'
           type: number

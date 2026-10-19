@@ -187,6 +187,7 @@ children:
         children:
           - type: ComboBox
             name: residualType
+            enable: (distanceMetric:pearson)
       # Number of Axes (own row)
       - type: LayoutBox
         margin: small
@@ -245,6 +246,7 @@ children:
             children:
               - type: ComboBox
                 name: symmetricShowContrib
+                enable: (showSymmetricPlot)
           - type: LayoutBox
             cell:
               column: 1
@@ -253,21 +255,24 @@ children:
             children:
               - type: ComboBox
                 name: symmetricShowQuality
+                enable: (showSymmetricPlot)
       - type: LayoutBox
         margin: small
         stretchFactor: 1
         children:
           - type: ComboBox
             name: symmetricShowPoints
+            enable: (showSymmetricPlot)
       - type: LayoutBox
         margin: small
         stretchFactor: 1
         children:
           - type: CheckBox
             name: symmetricShowClusters
+            enable: (showSymmetricPlot)
           - type: ComboBox
             name: symmetricClusterTarget
-            enable: (symmetricShowClusters)
+            enable: (showSymmetricPlot && symmetricShowClusters)
 
   # ============================================================================
   # GEOMETRIC INTERPRETATION PLOT
@@ -292,12 +297,13 @@ children:
             children:
               - type: ComboBox
                 name: geometricRefVariable
+                enable: (showGeometricPlot)
               - type: LevelSelector
                 name: geometricRefCategoryRow
-                enable: (geometricRefVariable:rows)
+                enable: (showGeometricPlot && geometricRefVariable:rows)
               - type: LevelSelector
                 name: geometricRefCategoryCol
-                enable: (geometricRefVariable:cols)
+                enable: (showGeometricPlot && geometricRefVariable:cols)
 
   # ============================================================================
   # CONTRIBUTION BIPLOT
@@ -321,6 +327,7 @@ children:
                 name: showContribPlot
               - type: ComboBox
                 name: contribFocus
+                enable: (showContribPlot)
           - type: LayoutBox
             cell:
               column: 1
@@ -329,10 +336,13 @@ children:
             children:
               - type: CheckBox
                 name: showQuality
+                enable: (showContribPlot)
               - type: CheckBox
                 name: hideWeakContrib
+                enable: (showContribPlot)
               - type: CheckBox
                 name: contribShowClusters
+                enable: (showContribPlot)
 
   # ============================================================================
   # CLUSTERING
@@ -366,7 +376,7 @@ children:
     stretchFactor: 1
     children:
       - type: Label
-        label: "Identify which attributes (columns) drive the row configuration"
+        label: Column Attributes
         children:
           - type: LayoutBox
             margin: small
@@ -395,14 +405,14 @@ children:
                     name: showAttrEliminationPlot
                     enable: (showAttrElimination)
       - type: Label
-        label: "Reduced-data CA"
+        label: Reduced-Data CA
         children:
           - type: CheckBox
             name: showReducedCAPlot
             enable: (showAttrElimination)
           - type: ComboBox
             name: reducedPlotAttrDisplay
-            enable: (showReducedCAPlot)
+            enable: (showAttrElimination && showReducedCAPlot)
 
   # ============================================================================
   # PLOT APPEARANCE
@@ -422,8 +432,6 @@ children:
               row: 0
             stretchFactor: 1
             children:
-              - type: CheckBox
-                name: showScreePlot
               - type: CheckBox
                 name: equalScale
           - type: LayoutBox
@@ -447,6 +455,8 @@ children:
     collapsed: true
     stretchFactor: 1
     children:
+      - type: CheckBox
+        name: showScreePlot
       - type: LayoutBox
         margin: small
         stretchFactor: 1

@@ -97,6 +97,9 @@ items:
         - alpha
         - power
         - n
+        - esType
+        - esConventional
+        - effectSize
 
     # 5. METHOD INFORMATION
     - name: methodInfo

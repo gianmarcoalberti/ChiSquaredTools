@@ -25,7 +25,8 @@ description:
         The analysis provides automated interpretation based on four diagnostic
         scenarios that consider the joint pattern of test results. When cell counts
         contain zeros, the Haldane-Anscombe correction (adding 0.5 to all cells)
-        is applied for odds ratio calculations and MH weights.
+        is applied to the stratum-specific and marginal odds ratios and in Woolf's
+        test; the Mantel-Haenszel common odds ratio uses the observed counts.
         
         This facility requires 2×2 tables only (both row and column variables
         must have exactly two levels).
@@ -49,7 +50,9 @@ description:
                 rows = 'Survival',
                 cols = 'Gender',
                 strata = 'Class',
-                counts = 'Count'
+                counts = 'Count',
+                rowRef = 'Yes',
+                colRef = 'Female'
             )
 
 completeWhenFilled: true

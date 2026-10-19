@@ -68,6 +68,7 @@ children:
     children:
       - type: CheckBox
         name: sidakCorrection
+        enable: (stdres || momcorrstdres || adjstdres)
   - type: CollapseBox
     label: Backwards-Stepping Options
     collapsed: true

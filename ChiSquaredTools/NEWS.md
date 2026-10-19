@@ -1,5 +1,53 @@
 # ChiSquaredTools News
 
+## Version 1.2.1
+
+### Bug Fixes
+- Association: Goodman-Kruskal tau and Kvålseth's corrected lambda had their 'rows dependent' and 'cols dependent' values swapped; they now follow the same convention as the plain lambda (the named variable is the one being predicted).
+- Association: Kvålseth's corrected lambda (symmetric) now uses his definition, the larger of the two directional values (Kvålseth 2018b, eq. 32), as the help text and its interval already did; previously the estimate used a weighted mean and could fall outside its own interval.
+- Association: the confidence-interval note no longer loses its last words ('[0, 1]'), which jamovi's note renderer dropped because they were in square brackets.
+- Association: the p-values of Yule's Q and Yule's Y (2×2 and pairwise) now come from the log-odds-ratio test, so they agree with the Odds Ratio and with their own confidence intervals (previously a Wald test on Q or Y could give p < .05 with an interval that included 0).
+- Association: the bootstrap confidence intervals for the corrected measures (φ, C and V corrected, W-hat and Sakoda's D, plain and corrected) no longer stop with an error when a resampled table loses a rare row or column; such replicates are left out of the percentile interval.
+- Association: φ, signed φ, C, Cramér's V and Cohen's w now also report Value (λ̂), the point estimate on the same noncentrality scale as their confidence interval, λ̂ = max(0, χ² − df), which always lies within the interval. The conventional value uses χ² itself and, with many degrees of freedom, can lie above the upper limit. The CI footnote and Method Details explain the difference; the earlier statement that the interval always contains the conventional estimate was incorrect.
+- Association: bias-corrected Cramér's V now uses Bergsma's (2013) corrected numbers of rows and columns, Ṽ = √(φ̃² / min(r̃ − 1, c̃ − 1)); the previous denominator gave no correction for 2×J tables and slightly too small values otherwise.
+- Test of Independence: in the Monte Carlo test, simulated tables with an empty row or column are redrawn instead of being counted as χ² = 0, which made p-values too small for sparse tables; a note reports how many were redrawn. The help text now states that the Monte Carlo test holds only N fixed, whereas the permutation test holds both margins fixed.
+- Correspondence Analysis, Attribute Assessment: backward elimination now compares each step with the full-data row configuration, as in Krzanowski (1993), so the M² trajectory is the cumulative distortion described in the help text; the elbow is suggested only when the trajectory stays low and then rises sharply (otherwise all attributes are kept), instead of always dropping at least one attribute.
+- Correspondence Analysis, Attribute Assessment: tables with fewer than 3 rows or 3 columns get a notice instead of meaningless rankings; plots that cannot be drawn are hidden instead of spinning; the influence plot no longer re-runs the elimination while rendering.
+- Correspondence Analysis: the reduced-data plot updates when 'Equal axis scales' changes, its axis percentages match the main CA plots, and row and column labels no longer overlap each other.
+- Power analysis: an a priori analysis with target power not above α now gives a plain message instead of a sample size of 4; the effect-size sensitivity curve marks the computed N (a priori) or the achieved power (post hoc) instead of the values in the disabled boxes, and it updates when the effect size changes.
+- 2×2×K: when the Mantel-Haenszel common odds ratio is not finite (e.g. the same cell is 0 in every stratum) it is reported as unavailable with a footnote, left out of the forest plot, and the interpretation no longer calls it a valid summary. The help text now states correctly that the Haldane-Anscombe correction applies to the stratum-specific and marginal odds ratios and to Woolf's test, not to the common odds ratio. The trajectory plot's odds-ratio axis now follows the data range.
+- R×C×K: bootstrap replicates in which a resampled table has an empty row or column are left out of the V corrected intervals (instead of counting as V = 0, which pulled the lower limits towards 0), and a note reports how many; a log-linear model that cannot be fitted now leaves the cells blank.
+- Association: Goodman-Kruskal lambda (plain and corrected) and tau intervals are truncated to [0, 1]; when a 2×2 table has a zero cell, a note says that the Odds Ratio, Yule's Q and Yule's Y include the Haldane-Anscombe correction.
+- Test of Independence: with non-integer counts, the permutation and Monte Carlo tests use the counts rounded to integers (previously the permutation test truncated them), and a note says so.
+- Post-Hoc: the backwards-stepping table no longer shows empty rows when the number of steps requested exceeds the number of cells minus one.
+- SRD: when every row (or column) is below the critical weight, or pruning would leave fewer than two, the categories are listed as kept rather than as removed.
+- Clustering: when the Greenacre method cannot be applied (e.g. a 2×J table), the dendrogram is hidden instead of left blank, next to the explanatory note.
+
+### New Features
+- R×C×K: pooled chi-squared test (sum of the partial-table tests), reported in the stratum table. As in 2×2×K, the generalised CMH test decides conditional dependence when there is no evidence of heterogeneity and the pooled test decides when there is; cells whose adjusted residuals are significant in opposite directions in different strata are named as a pattern reversal (the R×C counterpart of odds ratios reversing direction). The decision tree now starts from the homogeneity test.
+- Test of Independence: a new Cells section adds row, column and total percentages to the observed contingency table, shown as sub-rows under the counts as in jamovi's own Contingency Tables.
+
+### Changes
+- Attribute influence table and bar chart use the same importance classes; infinite M² values are explained in a footnote; the elbow is marked with a footnote.
+- Reduced-data plot choices renamed 'Full data, low-influence faded' and 'Reduced data only'.
+- Options that only affect a particular output are now enabled only when that output is selected (CA: residual type, symmetric, geometric and contribution plot settings; Post-Hoc: Šidák correction).
+- Attribute Assessment: with fewer than three elimination steps the table says that no elbow can be judged; the trajectory axis starts at 0.
+- The permutation and Monte Carlo distribution plots (Test of Independence), the PEM and DEP plots (Post-Hoc) and the forest plots (2×2×K and R×C×K) are now drawn with ggplot2 and follow the jamovi plot theme, like the other plots (the CA plots keep their own styling).
+- PEM and DEP plots: significant positive values in gold, significant negative values in maroon, non-significant values in grey; the category colours are no longer replaced by the jamovi theme palette.
+- Stratified Analysis (2×2×K and R×C×K): options are grouped in collapsible sections, as in the other analyses.
+- 2×2×K and R×C×K: the interpretation summaries, test notes and method explanations now match what the tests can support: a non-significant homogeneity test is reported as 'no evidence that the association differs across strata' rather than as proof of homogeneity; when the stratum odds ratios reverse direction, the CMH result and the common odds ratio are flagged as not interpretable; in 2×2×K the CMH test decides conditional dependence when there is no evidence of heterogeneity and the pooled chi-squared test decides when there is; the former 'Spuriousness (CMH Discordant)' scenario, in which consistent strata are pooled by the CMH test, is now 'Consistent Weak Association'.
+- 2×2×K: confounding is judged by the change-in-estimate criterion (marginal odds ratio against the common odds ratio, 10% threshold), giving 'Replication' or 'Partial Confounding'; R×C×K reports the marginal V corrected next to the weighted average for the same comparison.
+- Association: when the χ² test is significant but the noncentral intervals for φ, C, V and w reach 0 (p between α/2 and α), the CI note explains why and that a 1 − 2α interval would exclude 0.
+- Association and 2×2×K: the odds-ratio interpretation notes now share one wording, with columns as the groups (independent variable in the columns) and rows as the outcome and the change given as a percentage both above and below 1 (e.g. "for OPINION = 'Favour', the odds of GENDER = 'Female' rather than 'Male' are 3.91 times those for 'Oppose' (291% higher)"); the method explanations say so.
+- 2×2×K forest plot: the legend lists only the significance categories present in the plot.
+- Option labels in sentence case and without abbreviations (e.g. "Traditional chi-squared test", "Minimum quality (cos²) for correlations", "Row dendrogram"); redundant qualifiers removed from the PEM and DEP settings; the CA scree plot moved to Diagnostics.
+- Correspondence Analysis: Malinvaud's test now uses the min(I, J) − 1 dimensions of the solution, as the help text states (for Freeman-Tukey and adjusted residuals it previously also included one non-structural dimension).
+- SRD: method explanations are off by default, as in the other analyses.
+- Help texts updated for all the changes above (confidence intervals, bootstrap replicates, Haldane correction, truncated Lambda and Tau intervals, Monte Carlo and permutation tests, Attribute Assessment, SRD pruning, backwards-stepping steps) and corrected where they disagreed with the output (Post-Hoc highlighting, W-hat interval percentiles).
+- Internal: dead code removed (unused trivial-axis branches in CA, never-used caches in the stratified analyses); grid declared in Imports.
+- Krzanowski (1993) reference formatting corrected.
+- Added a tests/ folder with testthat cases (rare categories, 2×J tables, CI containment with many degrees of freedom, bias-corrected V, sparse Monte Carlo, non-finite common odds ratio, R×C×K bootstrap with a rare row, power-analysis limits).
+
 ## Version 1.2.0
 
 ### New Features

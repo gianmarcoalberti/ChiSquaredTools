@@ -433,7 +433,7 @@ items:
           title: Attribute Removed
           type: text
         - name: M2_at_removal
-          title: "M² at Removal"
+          title: "Cumulative M²"
           type: number
           format: zto
         - name: n_remaining
@@ -609,6 +609,7 @@ items:
         - reducedPlotAttrDisplay
         - dotSize
         - labelSize
+        - equalScale
 
     # --------------------------------------------------------------------------
     # Overdispersion Diagnostic Plot

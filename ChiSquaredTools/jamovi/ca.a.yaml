@@ -18,14 +18,15 @@ description:
 
     R:
         usage: |
-            data('HairEyeColor')
-            dat <- as.data.frame(HairEyeColor)
+            dat <- as.data.frame(datasets::HairEyeColor)
             
             ChiSquaredTools::ca(
                 data = dat,
                 rows = 'Hair',
                 cols = 'Eye',
-                counts = 'Freq'
+                counts = 'Freq',
+                geometricRefCategoryRow = 'Black',
+                geometricRefCategoryCol = 'Brown'
             )
 
 options:
@@ -183,7 +184,7 @@ options:
     # FILTERING OPTIONS
     # ==========================================================================
     - name: qualityThreshold
-      title: Min. quality (cos²) for correlations
+      title: Minimum quality (cos²) for correlations
       type: Number
       min: 0
       max: 1
@@ -193,7 +194,7 @@ options:
           correlations table. Set to 0 to show all categories.
 
     - name: residualThreshold
-      title: Highlight thresh. for residuals (|z|)
+      title: Highlighting threshold for residuals (|z|)
       type: Number
       min: 0
       max: 10
@@ -546,18 +547,19 @@ options:
           full-data CA plot.
 
     - name: reducedPlotAttrDisplay
-      title: Low-influence attribute display
+      title: Reduced-data plot shows
       type: List
       options:
         - name: fade
-          title: Fade
+          title: Full data, low-influence faded
         - name: hide
-          title: Hide
+          title: Reduced data only
       default: fade
       description: >
-          How to display low-influence attributes (those below the elbow)
-          on the reduced-data CA plot. 'Fade' renders them with reduced
-          opacity; 'Hide' removes them entirely.
+          What the reduced-data CA plot shows. 'Full data, low-influence
+          faded' draws the full-data CA with the low-influence attributes
+          (those removed up to the elbow) faded; 'Reduced data only'
+          re-runs CA without them.
 
     # ==========================================================================
     # DIAGNOSTICS

@@ -24,7 +24,8 @@ description:
         dontrun: false
         usage: |
             # A priori power analysis: How many participants needed?
-            chisqpower(
+            ChiSquaredTools::chisqpower(
+                data = data.frame(),
                 analysisType = 'apriori',
                 nRows = 3,
                 nCols = 4,
@@ -34,7 +35,8 @@ description:
             )
             
             # Post-hoc power analysis: What power did my study have?
-            chisqpower(
+            ChiSquaredTools::chisqpower(
+                data = data.frame(),
                 analysisType = 'posthoc',
                 nRows = 2,
                 nCols = 2,
@@ -44,7 +46,8 @@ description:
             )
             
             # Sensitivity analysis: What effect could I detect?
-            chisqpower(
+            ChiSquaredTools::chisqpower(
+                data = data.frame(),
                 analysisType = 'sensitivity',
                 nRows = 3,
                 nCols = 3,

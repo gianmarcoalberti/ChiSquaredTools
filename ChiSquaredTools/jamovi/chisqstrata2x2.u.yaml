@@ -37,50 +37,42 @@ children:
             maxItemCount: 1
             isTarget: true
   
-  # --- GROUP: Odds Ratio Options ---
-  - type: LayoutBox
-    margin: large
+  - type: CollapseBox
+    label: Odds Ratio Options
+    collapsed: false
+    stretchFactor: 1
     children:
-      - type: Label
-        label: Odds Ratio Options
+      - type: LayoutBox
+        margin: normal
         children:
-          - type: LayoutBox
-            margin: normal
-            children:
-              - type: LevelSelector
-                name: rowRef
-                label: Row category of interest
-                enable: (rows)
-          - type: LayoutBox
-            margin: normal
-            children:
-              - type: LevelSelector
-                name: colRef
-                label: Col. category of interest
-                enable: (cols)
-  
-  # --- GROUP: Visual Summaries ---
-  - type: LayoutBox
-    margin: large
+          - type: LevelSelector
+            name: rowRef
+            label: Row category of interest
+            enable: (rows)
+      - type: LayoutBox
+        margin: normal
+        children:
+          - type: LevelSelector
+            name: colRef
+            label: Column category of interest
+            enable: (cols)
+  - type: CollapseBox
+    label: Visual Summaries
+    collapsed: true
+    stretchFactor: 1
     children:
-      - type: Label
-        label: Visual Summaries
-        children:
-          - type: CheckBox
-            name: showForestPlot
-          - type: CheckBox
-            name: strataOrdered
-          - type: CheckBox
-            name: showTrajectoryPlot
-            enable: (strataOrdered)
-            style: list-inline
-  
-  # --- GROUP: Method Information ---
-  - type: LayoutBox
-    margin: large
+      - type: CheckBox
+        name: showForestPlot
+      - type: CheckBox
+        name: strataOrdered
+      - type: CheckBox
+        name: showTrajectoryPlot
+        enable: (strataOrdered)
+        style: list-inline
+  - type: CollapseBox
+    label: Display Options
+    collapsed: true
+    stretchFactor: 1
     children:
-      - type: Label
-        label: Method Information
-        children:
-          - type: CheckBox
-            name: showMethodInfo
+      - type: CheckBox
+        name: showMethodInfo

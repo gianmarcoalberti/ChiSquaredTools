@@ -19,16 +19,14 @@ description:
     R:
         dontrun: false
         usage: |
-            # Example with Titanic data
-            data('Titanic')
-            titanic_df <- as.data.frame(Titanic)
-            titanic_expanded <- titanic_df[rep(seq_len(nrow(titanic_df)), 
-                                               titanic_df$Freq), 1:4]
+            # Example with the Titanic data (one row per cell, counts in 'Freq')
+            titanic_df <- as.data.frame(datasets::Titanic)
             
-            chisqtest(
-                data = titanic_expanded,
+            ChiSquaredTools::chisqtest(
+                data = titanic_df,
                 rows = 'Class',
                 cols = 'Survived',
+                counts = 'Freq',
                 traditionalTest = TRUE,
                 n1Test = TRUE,
                 permTest = TRUE,
@@ -80,7 +78,7 @@ options:
             If not provided, data are assumed to be in long format (one row per case).
 
     - name: traditionalTest
-      title: Traditional Chi-Squared Test
+      title: Traditional chi-squared test
       type: Bool
       default: true
       description:
@@ -88,7 +86,7 @@ options:
             TRUE or FALSE (default: TRUE), compute traditional chi-squared test
 
     - name: n1Test
-      title: (N-1) Adjusted Chi-Squared Test
+      title: (N−1)/N adjusted chi-squared test
       type: Bool
       default: false
       description:
@@ -96,7 +94,7 @@ options:
             TRUE or FALSE (default: FALSE), compute (N-1)/N adjusted chi-squared test
 
     - name: permTest
-      title: Permutation Test
+      title: Permutation test
       type: Bool
       default: false
       description:
@@ -104,7 +102,7 @@ options:
             TRUE or FALSE (default: FALSE), compute permutation-based test
 
     - name: monteCarloTest
-      title: Monte Carlo Test
+      title: Monte Carlo test
       type: Bool
       default: false
       description:
@@ -112,7 +110,7 @@ options:
             TRUE or FALSE (default: FALSE), compute Monte Carlo test
 
     - name: mTest
-      title: M Test
+      title: M test
       type: Bool
       default: false
       description:
@@ -123,7 +121,7 @@ options:
             association is driven by a single outlying cell.
 
     - name: nPerms
-      title: Number of Permutations/Monte Carlo Replications
+      title: Number of permutations / Monte Carlo replications
       type: Integer
       min: 99
       max: 9999
@@ -133,7 +131,7 @@ options:
             number of permutations or Monte Carlo replications (default: 999)
 
     - name: seed
-      title: Random Seed
+      title: Random seed
       type: Integer
       min: 1
       max: 999999
@@ -141,6 +139,33 @@ options:
       description:
           R: >
             random seed for reproducibility (default: 123)
+
+    - name: pctRow
+      title: Row
+      type: Bool
+      default: false
+      description:
+          R: >
+            TRUE or FALSE (default: FALSE), show row percentages in the
+            observed contingency table
+
+    - name: pctCol
+      title: Column
+      type: Bool
+      default: false
+      description:
+          R: >
+            TRUE or FALSE (default: FALSE), show column percentages in the
+            observed contingency table
+
+    - name: pctTotal
+      title: Total
+      type: Bool
+      default: false
+      description:
+          R: >
+            TRUE or FALSE (default: FALSE), show percentages of the grand
+            total in the observed contingency table
 
     - name: showDistributions
       title: Distribution plots

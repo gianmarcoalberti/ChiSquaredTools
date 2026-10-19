@@ -194,11 +194,14 @@ chisqpowerClass <- R6::R6Class(
       }
       
       if (self$options$showESCurve) {
+        # Mark the N and power of the current analysis: in a priori mode the
+        # N is the one just computed (the N box is disabled), in post hoc
+        # mode the power is the achieved one (the power box is disabled)
         esPlotState <- list(
           df = df,
           alpha = alpha,
-          power = self$options$power,
-          sampleN = self$options$n,
+          power = if (analysisType == "posthoc") achievedPower else self$options$power,
+          sampleN = if (analysisType == "apriori") requiredN else self$options$n,
           k = k
         )
         self$results$esCurvePlot$setState(esPlotState)
@@ -264,6 +267,14 @@ chisqpowerClass <- R6::R6Class(
         ncp <- n * w^2
         computedPower <- 1 - pchisq(critChi, df, ncp = ncp)
         return(computedPower - targetPower)
+      }
+      
+      # Power tends to alpha as N tends to 0, so a target power at or
+      # below alpha would need no data at all
+      if (targetPower <= alpha) {
+        jmvcore::reject(paste0(
+          "The target power (", targetPower, ") must be greater than \u03b1 (",
+          alpha, "); with power \u2264 \u03b1 no sample size is needed."))
       }
       
       # Find N using uniroot

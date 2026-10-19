@@ -315,13 +315,8 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
         private$.attrElimination <- NULL
         private$.attrElbowStep <- NULL
         
-        if (self$options$showAttrInfluence) {
-            private$.populateAttrInfluenceTable()
-        }
-        
-        if (self$options$showAttrElimination) {
-            private$.populateAttrEliminationTable()
-        }
+        if (self$options$showAttrInfluence || self$options$showAttrElimination)
+            private$.prepareAttrAssessment()
         
         # Save what each plot draws into its image state, so that plots
         # also render when jamovi exports them from a fresh instance
@@ -593,15 +588,9 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
             # For all methods, use only min(I-1, J-1) eigenvalues (following Beh & Lombardo)
             max_axes_for_inertia <- min(I - 1, J - 1)
             
-            if (start_idx == 2 && length(eigenvalues_all) > 1) {
-                # Pearson: skip trivial axis, take next min(I-1,J-1) eigenvalues
-                end_idx <- min(start_idx + max_axes_for_inertia - 1, length(eigenvalues_all))
-                all_nontrivial <- eigenvalues_all[start_idx:end_idx]
-            } else {
-                # Freeman-Tukey: take first min(I-1,J-1) eigenvalues
-                end_idx <- min(max_axes_for_inertia, length(eigenvalues_all))
-                all_nontrivial <- eigenvalues_all[1:end_idx]
-            }
+            # (centred residual matrices: no trivial axis to skip)
+            end_idx <- min(max_axes_for_inertia, length(eigenvalues_all))
+            all_nontrivial <- eigenvalues_all[1:end_idx]
             inertia_total <- sum(all_nontrivial)
             inertia_proportion <- eigenvalues / inertia_total
             inertia_cumulative <- cumsum(inertia_proportion)
@@ -763,11 +752,10 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
         # =====================================================================
         .computeMalinvaud = function(eigenvalues_all, start_idx, I, J, grand_total, n_axes) {
             
-            if (start_idx == 2) {
-                eig <- eigenvalues_all[2:length(eigenvalues_all)]
-            } else {
-                eig <- eigenvalues_all
-            }
+            # The M = min(I, J) - 1 dimensions of the solution (for
+            # Freeman-Tukey and adjusted residuals the SVD returns one more,
+            # non-structural singular value, which is not part of the inertia)
+            eig <- eigenvalues_all[seq_len(min(I, J) - 1)]
             
             n_eig <- min(length(eig), n_axes)
             malin_results <- data.frame(
@@ -1458,13 +1446,9 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
             if (is.null(n_dims)) {
                 # Auto: capture >= 80% of inertia, minimum 2
                 max_axes_for_inertia <- min(I - 1, J - 1)
-                if (start_idx == 2 && length(eigenvalues_all) > 1) {
-                    end_idx <- min(start_idx + max_axes_for_inertia - 1, length(eigenvalues_all))
-                    all_nontrivial <- eigenvalues_all[start_idx:end_idx]
-                } else {
-                    end_idx <- min(max_axes_for_inertia, length(eigenvalues_all))
-                    all_nontrivial <- eigenvalues_all[1:end_idx]
-                }
+                # (centred residual matrices: no trivial axis to skip)
+                end_idx <- min(max_axes_for_inertia, length(eigenvalues_all))
+                all_nontrivial <- eigenvalues_all[1:end_idx]
                 inertia_total <- sum(all_nontrivial)
                 
                 if (inertia_total > 0) {
@@ -1496,13 +1480,9 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
             
             # Total inertia
             max_axes_for_inertia <- min(I - 1, J - 1)
-            if (start_idx == 2 && length(eigenvalues_all) > 1) {
-                end_idx <- min(start_idx + max_axes_for_inertia - 1, length(eigenvalues_all))
-                all_nontrivial <- eigenvalues_all[start_idx:end_idx]
-            } else {
-                end_idx <- min(max_axes_for_inertia, length(eigenvalues_all))
-                all_nontrivial <- eigenvalues_all[1:end_idx]
-            }
+            # (centred residual matrices: no trivial axis to skip)
+            end_idx <- min(max_axes_for_inertia, length(eigenvalues_all))
+            all_nontrivial <- eigenvalues_all[1:end_idx]
             inertia_total <- sum(all_nontrivial)
             inertia_captured <- sum(eigenvalues) / inertia_total
             
@@ -1627,10 +1607,22 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
             # Rank: largest M² = most important (removing it distorts most)
             influence_order <- order(M2_values, decreasing = TRUE)
             
+            M2_sorted <- M2_values[influence_order]
+            
+            # Importance classes (shared by the table and the bar chart):
+            # infinite M² = indispensable; among the finite values, the three
+            # largest are 'High', the rest of the top half (rounded up) 'Moderate'
+            finite_rank <- cumsum(is.finite(M2_sorted))
+            n_finite <- sum(is.finite(M2_sorted))
+            importance <- ifelse(!is.finite(M2_sorted), "Indispensable",
+                          ifelse(finite_rank <= 3, "High",
+                          ifelse(finite_rank <= ceiling(n_finite / 2), "Moderate", "Low")))
+            
             data.frame(
                 attribute = colnames(N)[influence_order],
-                M2 = M2_values[influence_order],
+                M2 = M2_sorted,
                 rank = 1:c_total,
+                importance = importance,
                 stringsAsFactors = FALSE
             )
         },
@@ -1648,6 +1640,10 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
             if (is.null(ca_full)) return(NULL)
             
             m <- ca_full$n_dims
+            # Every step is compared with the full-data configuration, so the
+            # sequence records the cumulative distortion caused by the removals
+            X_ref <- ca_full$row_princ
+            p_i_full <- ca_full$row_mass
             
             # Minimum columns to retain
             min_cols <- max(2, m)
@@ -1667,16 +1663,9 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
             )
             
             for (step in 1:n_steps) {
+ 
                 current_N <- N[, remaining_cols, drop = FALSE]
                 n_current <- ncol(current_N)
-                
-                # Reference CA for current reduced matrix
-                ca_current <- private$.computeCAForProcrustes(current_N, n_dims = m)
-                if (is.null(ca_current)) break
-                
-                X_current <- ca_current$row_princ
-                p_i_current <- ca_current$row_mass
-                m_current <- ncol(X_current)
                 
                 # Compute M² for each remaining column
                 M2_step <- numeric(n_current)
@@ -1688,7 +1677,7 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
                         next
                     }
                     
-                    ca_minus_j <- private$.computeCAForProcrustes(N_minus_j, n_dims = m_current)
+                    ca_minus_j <- private$.computeCAForProcrustes(N_minus_j, n_dims = m)
                     
                     if (is.null(ca_minus_j)) {
                         M2_step[jj] <- Inf
@@ -1696,13 +1685,13 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
                     }
                     
                     Y_j <- ca_minus_j$row_princ
-                    if (ncol(Y_j) < m_current) {
-                        Y_j <- cbind(Y_j, matrix(0, nrow = nrow(Y_j), ncol = m_current - ncol(Y_j)))
+                    if (ncol(Y_j) < m) {
+                        Y_j <- cbind(Y_j, matrix(0, nrow = nrow(Y_j), ncol = m - ncol(Y_j)))
                     }
                     
                     M2_step[jj] <- private$.computeProcrustesM2(
-                        X_current, Y_j,
-                        weights = p_i_current,
+                        X_ref, Y_j,
+                        weights = p_i_full,
                         scale = TRUE
                     )
                 }
@@ -1732,28 +1721,32 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
         # Elbow detection for elimination sequence
         # ---------------------------------------------------------------------
         .detectElbow = function(M2_values) {
+            # Returns the last elimination step before the cumulative M²
+            # starts rising steeply, or 0 when there is no clear elbow (fewer
+            # than three steps, a flat or straight trajectory, or one that
+            # rises first and then flattens). 0 means: keep all attributes.
             
             n <- length(M2_values)
-            if (n < 3) return(max(1, n - 1))
+            if (n < 3 || any(!is.finite(M2_values))) return(0L)
             
             # Normalise to [0, 1] range
             x <- seq(0, 1, length.out = n)
             y_range <- range(M2_values)
-            
-            if (diff(y_range) < 1e-15) return(n %/% 2)
-            
+            if (diff(y_range) < 1e-12) return(0L)
             y <- (M2_values - y_range[1]) / diff(y_range)
             
-            # Distance of each point to line from first to last point
+            # Signed distance from the chord joining first and last points
+            # (positive = below the chord, i.e. removals that cost little)
             x1 <- x[1]; y1 <- y[1]
             x2 <- x[n]; y2 <- y[n]
-            
             line_len <- sqrt((x2 - x1)^2 + (y2 - y1)^2)
-            if (line_len < 1e-15) return(n %/% 2)
+            if (line_len < 1e-12) return(0L)
+            distances <- ((y2 - y1) * x - (x2 - x1) * y + x2 * y1 - y2 * x1) / line_len
             
-            distances <- abs((y2 - y1) * x - (x2 - x1) * y + x2 * y1 - y2 * x1) / line_len
-            
-            which.max(distances)
+            # A bend smaller than 0.1 (on the unit-square scale) is not
+            # treated as an elbow
+            if (max(distances) < 0.1) return(0L)
+            as.integer(which.max(distances))
         },
         
         # ---------------------------------------------------------------------
@@ -3718,21 +3711,38 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
               indicates the attribute contributes little to distinguishing between rows and could potentially be 
               dropped without much loss of information.</p>
               
+              <p><strong>Importance classes</strong> (influence table and bar chart): an attribute whose removal 
+              leaves a row or column with no observations has an infinite M\u00b2 and is <em>Indispensable</em>; 
+              among the others, the three with the largest M\u00b2 are <em>High</em>, the rest of the top half 
+              <em>Moderate</em> and the remainder <em>Low</em>. These classes describe each attribute in the 
+              presence of all the others; the backward elimination below is the guide to which attributes 
+              can be dropped together.</p>
+              
               <h4 style='color: #5D6D7E; margin-top: 1em;'>Backward Elimination</h4>
               
               <p>The backward elimination procedure iteratively identifies an optimal subset of attributes:</p>
               
               <ol style='margin-left: 2em;'>
-                <li>Compute M\u00b2 for all remaining attributes.</li>
+                <li>For each remaining attribute, compute M\u00b2 between the full-data row configuration 
+                <strong>X</strong> and the configuration obtained after also removing that attribute.</li>
                 <li>Remove the attribute with the <em>smallest</em> M\u00b2 (least influential).</li>
-                <li>Recompute all M\u00b2 values for the reduced table.</li>
                 <li>Repeat until only a minimum number of attributes remain.</li>
               </ol>
               
-              <p><strong>Elbow detection:</strong> The trajectory of M\u00b2 values typically remains low while 
-              uninformative attributes are removed, then rises sharply when important attributes are eliminated. 
-              The 'elbow' marks the transition point\u2014attributes removed before the elbow contribute minimally; 
-              those after the elbow are essential.</p>
+              <p>As in Krzanowski (1993, pp. 536\u2013537), every step is compared with the full-data (reference) 
+              configuration, using the full-table row masses as weights and rescaling both configurations to 
+              unit sum of squares; the M\u00b2 values therefore form a cumulative trajectory, the distortion caused 
+              by all the attributes removed so far. The reference configuration uses the smallest number of 
+              dimensions (at least 3 when the table allows) that accounts for at least 80% of the inertia.</p>
+              
+              <p><strong>Elbow detection:</strong> The trajectory typically remains low while uninformative 
+              attributes are removed, then rises sharply when important attributes are eliminated. The 'elbow' 
+              is the last step before the sharp rise (the point furthest below the straight line joining the 
+              first and last steps); attributes removed up to the elbow contribute little. When the trajectory 
+              is (nearly) straight, rises first and then flattens, or has fewer than three steps, no elbow is 
+              suggested and all attributes are kept. Krzanowski (1993) stops the elimination at a chosen number of 
+              columns or at a preset M\u00b2 threshold; the elbow is this module's data-driven guide to that choice, 
+              not part of the original method.</p>
               
               <h4 style='color: #5D6D7E; margin-top: 1em;'>Reduced-Data CA Plot</h4>
               
@@ -3741,11 +3751,16 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
               to assess whether the essential structure is preserved with fewer attributes.</p>
               
               <ul style='margin-left: 2em;'>
-                <li><strong>Fade:</strong> Low-influence attributes are shown with reduced opacity, allowing 
-                comparison while de-emphasising their contribution.</li>
-                <li><strong>Hide:</strong> Low-influence attributes are omitted entirely; CA is recomputed 
-                on the reduced matrix.</li>
+                <li><strong>Full data, low-influence faded:</strong> the full-data CA, with the low-influence 
+                attributes shown with reduced opacity.</li>
+                <li><strong>Reduced data only:</strong> CA is recomputed on the table without the low-influence 
+                attributes, which are omitted.</li>
               </ul>
+              
+              <p><strong>Requirements:</strong> attribute assessment needs at least 3 rows and 3 columns. With 
+              2 rows the row configuration has a single dimension, whose sign a Procrustes rotation can always 
+              reverse, so every M\u00b2 would be 0; with 2 columns, removing either leaves a single column. In 
+              these cases a notice is shown and the attribute outputs are omitted.</p>
               
               <p><strong>Computational note:</strong> Backward elimination is computationally expensive for 
               large tables (O(c\u00b2) CA computations for c columns). The single-pass influence ranking is 
@@ -3788,21 +3803,12 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
                     rank = influence$rank[i],
                     attribute = influence$attribute[i],
                     M2 = if (is.infinite(influence$M2[i])) NA else influence$M2[i],
-                    importance = if (is.infinite(influence$M2[i])) {
-                        "Indispensable"
-                    } else if (i <= 3) {
-                        "High"
-                    } else if (i <= nrow(influence) * 0.5) {
-                        "Moderate"
-                    } else {
-                        "Low"
-                    }
+                    importance = influence$importance[i]
                 ))
                 
-                # Format indispensable rows
-                if (is.infinite(influence$M2[i])) {
-                    table$addFormat(rowKey = i, col = "M2", jmvcore::Cell.NEGATIVE)
-                }
+                if (is.infinite(influence$M2[i]))
+                    table$addFootnote(rowKey = i, col = "M2",
+                        "M\u00b2 is infinite: removing this attribute leaves a row or column with no observations.")
             }
             
             # Add explanatory note
@@ -3829,11 +3835,11 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
         # Compute elimination sequence
         elimination <- private$.assessAttributeElimination(N)
         if (is.null(elimination) || nrow(elimination) == 0) {
-            table$setNote("error", "Could not perform backward elimination", init = FALSE)
+            table$setNote("error", "Backward elimination is not possible for this table (too few attributes beyond the dimensions retained, or every attribute is indispensable).", init = FALSE)
             return()
         }
         
-        # Detect elbow
+        # Detect elbow (0 = no clear elbow, keep all attributes)
         elbow_step <- private$.detectElbow(elimination$M2_at_removal)
         
         # Store for use in plots
@@ -3848,27 +3854,92 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
                 M2_at_removal = elimination$M2_at_removal[i],
                 n_remaining = elimination$n_remaining[i]
             ))
+            if (i == elbow_step)
+                table$addFootnote(rowKey = i, col = "step", "Suggested elbow: the attributes removed up to this step add little to the row configuration.")
+        }
+        
+        table$setNote("method", paste0(
+            "M\u00b2 compares the row configuration after each removal with the full-data configuration, ",
+            "so it records the cumulative distortion caused by the attributes removed so far."),
+            init = FALSE)
+        
+        if (nrow(elimination) < 3) {
+            table$setNote("elbow", paste0(
+                "Too few elimination steps (", nrow(elimination), ") to judge an elbow, so no attributes are ",
+                "suggested for removal; judge from the M\u00b2 values (a value close to 0 means the removed ",
+                "attribute adds little to the row configuration)."),
+                init = FALSE)
+        } else if (elbow_step == 0) {
+            table$setNote("elbow", paste0(
+                "No clear elbow: the distortion does not stay low and then rise sharply, ",
+                "so no attributes are suggested for removal (keep all ", ncol(N), ")."),
+                init = FALSE)
+        } else {
+            cols_dropped <- elimination$attribute_removed[seq_len(elbow_step)]
+            cols_retained <- setdiff(colnames(N), cols_dropped)
+            table$setNote("elbow", paste0(
+                "Suggested elbow at step ", elbow_step,
+                " (retain ", length(cols_retained), " of ", ncol(N), " attributes): ",
+                paste(cols_retained, collapse = ", "), "."),
+                init = FALSE)
+        }
+    },
+    
+    # =====================================================================
+    # ATTRIBUTE ASSESSMENT: applicability checks, tables, plot states
+    # =====================================================================
+    .prepareAttrAssessment = function() {
+        
+        N <- private$.contingencyTable
+        if (is.null(N)) return()
+        
+        attrOutputs <- c("attrInfluenceTable", "attrEliminationTable",
+                         "attrInfluencePlot", "attrEliminationPlot", "reducedCAPlot")
+        msgs <- character(0)
+        
+        # Needs at least 3 rows and 3 columns: with 2 rows the configuration
+        # is one-dimensional (Procrustes rotation can always flip its sign,
+        # so every M² is 0); with 2 columns removing either leaves one
+        ref <- if (min(dim(N)) >= 3) private$.computeCAForProcrustes(N) else NULL
+        if (min(dim(N)) < 3 || is.null(ref) || ref$n_dims < 2) {
+            for (nm in attrOutputs) self$results[[nm]]$setVisible(FALSE)
+            msgs <- "Attribute assessment needs at least 3 rows and 3 columns (and a row configuration with at least 2 dimensions), so its tables and plots are not shown."
+        } else {
+            if (self$options$showAttrInfluence)
+                private$.populateAttrInfluenceTable()
             
-            # Highlight elbow row
-            if (i == elbow_step) {
-                table$addFormat(rowKey = i, col = "step", jmvcore::Cell.NEGATIVE)
+            if (self$options$showAttrElimination) {
+                private$.populateAttrEliminationTable()
+                
+                if (is.null(private$.attrElimination)) {
+                    self$results$attrEliminationPlot$setVisible(FALSE)
+                    self$results$reducedCAPlot$setVisible(FALSE)
+                } else if (self$options$showReducedCAPlot &&
+                           self$options$reducedPlotAttrDisplay == "hide") {
+                    # In 'reduced data only' mode the plot re-runs CA on the
+                    # retained attributes: check it can show the chosen axes
+                    kept <- setdiff(colnames(N), private$.getLowInfluenceAttributes())
+                    nDimReduced <- min(nrow(N), length(kept)) - 1
+                    maxDim <- max(self$options$dim1, self$options$dim2)
+                    if (maxDim > nDimReduced) {
+                        self$results$reducedCAPlot$setVisible(FALSE)
+                        msgs <- sprintf(paste0(
+                            "The reduced-data CA plot cannot be drawn: with the %d retained attributes ",
+                            "the reduced table has %d dimension(s), fewer than the plotted Dimension %d."),
+                            length(kept), nDimReduced, maxDim)
+                    }
+                }
             }
         }
         
-        # Determine attributes to KEEP (those NOT removed before elbow)
-        all_cols <- colnames(N)
-        cols_dropped <- elimination$attribute_removed[1:min(elbow_step, nrow(elimination))]
-        cols_retained <- setdiff(all_cols, cols_dropped)
-        n_retained <- length(cols_retained)
-        
-        table$setNote("elbow", paste0(
-            "Suggested elbow at step ", elbow_step, 
-            " (retain ", n_retained, " of ", ncol(N), " attributes)."),
-            init = FALSE)
-        
-        table$setNote("retained", paste0(
-            "Suggested to keep: ", paste(cols_retained, collapse = ", ")),
-            init = FALSE)
+        if (length(msgs) == 0) return()
+        notice <- jmvcore::Notice$new(
+            self$options,
+            name = 'attrNotice',
+            type = jmvcore::NoticeType$WARNING
+        )
+        notice$setContent(paste(msgs, collapse = " "))
+        self$results$insert(1, notice)
     },
         
         # =====================================================================
@@ -4936,17 +5007,6 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
         if (!self$options$showAttrInfluencePlot) return(FALSE)
         if (is.null(private$.attrInfluence)) return(FALSE)
         
-        N <- private$.contingencyTable
-        
-        # Ensure elimination has been computed for consistent colouring
-        if (is.null(private$.attrElimination) && !is.null(N)) {
-            elimination <- private$.assessAttributeElimination(N)
-            if (!is.null(elimination) && nrow(elimination) > 0) {
-                private$.attrElimination <- elimination
-                private$.attrElbowStep <- private$.detectElbow(elimination$M2_at_removal)
-            }
-        }
-        
         influence <- private$.attrInfluence
         
         # Show ALL categories
@@ -4956,16 +5016,13 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
         plot_data$M2_display <- plot_data$M2
         has_inf <- is.infinite(plot_data$M2_display)
         if (any(has_inf)) {
-            finite_max <- max(plot_data$M2_display[!has_inf], na.rm = TRUE)
+            finite_max <- if (any(!has_inf)) max(plot_data$M2_display[!has_inf], na.rm = TRUE) else 1
             plot_data$M2_display[has_inf] <- finite_max * 1.2
         }
         
-        # Determine which are low-influence based on elimination elbow
-        low_influence_attrs <- private$.getLowInfluenceAttributes()
-        
-        # Mark categories BEFORE converting to factor
-        plot_data$category <- ifelse(plot_data$attribute %in% low_influence_attrs,
-                                     "Low influence (drop)", "High influence (keep)")
+        # Colour by the importance classes shown in the influence table
+        plot_data$category <- factor(plot_data$importance,
+                                     levels = c("Indispensable", "High", "Moderate", "Low"))
         
         # Now convert to factor for correct plot ordering (most important at top)
         plot_data$attribute <- factor(plot_data$attribute, 
@@ -4977,9 +5034,9 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
             ggplot2::geom_col(width = 0.7) +
             ggplot2::coord_flip() +
             ggplot2::scale_fill_manual(
-                values = c("High influence (keep)" = "#2171B5", 
-                           "Low influence (drop)" = "#BDBDBD"),
-                name = NULL
+                values = c("Indispensable" = "#08306B", "High" = "#2171B5",
+                           "Moderate" = "#6BAED6", "Low" = "#BDBDBD"),
+                name = NULL, drop = TRUE
             ) +
             ggplot2::labs(
                 x = NULL,
@@ -5015,7 +5072,7 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
         
         elimination <- private$.attrElimination
         elbow_step <- private$.attrElbowStep
-        if (is.null(elbow_step)) elbow_step <- nrow(elimination) %/% 2
+        if (is.null(elbow_step)) elbow_step <- 0L
         
         plot_data <- data.frame(
             step = elimination$step,
@@ -5034,21 +5091,31 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
         p <- ggplot2::ggplot(plot_data, ggplot2::aes(x = step, y = M2)) +
             ggtheme +
             ggplot2::geom_line(colour = "#2171B5", linewidth = 0.8) +
-            ggplot2::geom_point(colour = "#2171B5", size = 2) +
-            ggplot2::geom_vline(xintercept = elbow_step, linetype = "dashed", 
-                                colour = "#E41A1C", linewidth = 0.8) +
-            ggplot2::annotate("label", 
-                              x = elbow_step, 
-                              y = y_annotation,
-                              label = paste0("Elbow (retain ", n_retained, ")"),
-                              hjust = 1.1,
-                              colour = "#E41A1C", 
-                              size = 3,
-                              fill = "white",
-                              label.size = 0.3) +
+            ggplot2::geom_point(colour = "#2171B5", size = 2)
+        if (elbow_step >= 1) {
+            p <- p +
+                ggplot2::geom_vline(xintercept = elbow_step, linetype = "dashed", 
+                                    colour = "#E41A1C", linewidth = 0.8) +
+                ggplot2::annotate("label", 
+                                  x = elbow_step, 
+                                  y = y_annotation,
+                                  label = paste0("Elbow (retain ", n_retained, ")"),
+                                  hjust = 1.1,
+                                  colour = "#E41A1C", 
+                                  size = 3,
+                                  fill = "white",
+                                  label.size = 0.3)
+        } else {
+            p <- p + ggplot2::labs(subtitle = if (nrow(plot_data) < 3)
+                "Too few steps to judge an elbow" else "No clear elbow: keep all attributes")
+        }
+        p <- p +
+            ggplot2::scale_x_continuous(breaks = plot_data$step) +
+            # M² cannot be negative: start the axis at 0
+            ggplot2::expand_limits(y = c(0, max(plot_data$M2) * 1.1)) +
             ggplot2::labs(
                 x = "Elimination step",
-                y = expression(M^2 ~ "at removal"),
+                y = expression("Cumulative" ~ M^2 ~ "(vs full data)"),
                 title = "Backward Elimination Sequence"
             ) +
             ggplot2::theme(
@@ -5080,15 +5147,7 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
         ca_full <- private$.caResult
         if (is.null(ca_full)) return(FALSE)
         
-        # Ensure elimination has been computed (needed for low-influence detection)
-        if (is.null(private$.attrElimination)) {
-            elimination <- private$.assessAttributeElimination(N)
-            if (!is.null(elimination) && nrow(elimination) > 0) {
-                private$.attrElimination <- elimination
-                private$.attrElbowStep <- private$.detectElbow(elimination$M2_at_removal)
-            }
-        }
-        
+        # (the elimination is computed in .run() and restored from state)
         if (is.null(private$.attrElimination) || nrow(private$.attrElimination) == 0) return(FALSE)
         
         dim1 <- self$options$dim1
@@ -5191,12 +5250,9 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
         }
         
         # Inertia for axis labels
+        # (over the min(I, J) - 1 dimensions, as in the main CA plots)
         eigenvalues_all <- d^2
-        if (start_idx == 2) {
-            total_inertia <- sum(eigenvalues_all[2:length(eigenvalues_all)])
-        } else {
-            total_inertia <- sum(eigenvalues_all)
-        }
+        total_inertia <- sum(eigenvalues_all[seq_len(min(nrow(N_plot), ncol(N_plot)) - 1)])
         
         inertia_pct_1 <- d_use[1]^2 / total_inertia * 100
         inertia_pct_2 <- d_use[2]^2 / total_inertia * 100
@@ -5213,7 +5269,8 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
             subtitle <- paste0(n_retained, " of ", n_original, " attributes; low-influence hidden")
         } else {
             title <- paste0("CA Plot with Attribute Assessment (", resid_label, " residuals)")
-            subtitle <- "Low-influence attributes faded"
+            subtitle <- if (length(low_influence_attrs) > 0) "Low-influence attributes faded" else
+                "No low-influence attributes (no clear elbow)"
         }
         
         # Build plot - matching Symmetric CA Plot style exactly
@@ -5271,12 +5328,27 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
             )
         }
         
-        # Row labels
+        # Labels: rows and columns in ONE repel layer, so that row and column
+        # labels also avoid each other (separate layers only repel within
+        # themselves)
+        lab_row <- data.frame(x = row_df$x, y = row_df$y, label = row_df$label,
+                              lab_colour = "#CB181D", lab_size = labelSize,
+                              stringsAsFactors = FALSE)
+        if (attrDisplay == "fade" && length(low_influence_attrs) > 0) {
+            is_low <- col_df$influence == "Low"
+        } else {
+            is_low <- rep(FALSE, nrow(col_df))
+        }
+        lab_col <- data.frame(x = col_df$x, y = col_df$y, label = col_df$label,
+                              lab_colour = ifelse(is_low, "#9ECAE1", "#2171B5"),
+                              lab_size = ifelse(is_low, labelSize * 0.85, labelSize),
+                              stringsAsFactors = FALSE)
+        lab_all <- rbind(lab_row, lab_col)
         p <- p + ggrepel::geom_text_repel(
-            data = row_df,
+            data = lab_all,
             ggplot2::aes(x = x, y = y, label = label),
-            colour = "#CB181D", 
-            size = labelSize,
+            colour = lab_all$lab_colour,
+            size = lab_all$lab_size,
             max.overlaps = 30,
             box.padding = 0.4,
             point.padding = 0.3,
@@ -5287,61 +5359,6 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
             segment.size = 0.4,
             seed = 42
         )
-        
-        # Column labels (with fading for low-influence if applicable)
-        if (attrDisplay == "fade" && length(low_influence_attrs) > 0) {
-            if (nrow(col_df_high) > 0) {
-                p <- p + ggrepel::geom_text_repel(
-                    data = col_df_high,
-                    ggplot2::aes(x = x, y = y, label = label),
-                    colour = "#2171B5", 
-                    size = labelSize,
-                    max.overlaps = 30,
-                    box.padding = 0.4,
-                    point.padding = 0.3,
-                    force = 2,
-                    force_pull = 0.3,
-                    min.segment.length = 0.5,
-                    segment.colour = "grey50",
-                    segment.size = 0.4,
-                    seed = 42
-                )
-            }
-            
-            if (nrow(col_df_low) > 0) {
-                p <- p + ggrepel::geom_text_repel(
-                    data = col_df_low,
-                    ggplot2::aes(x = x, y = y, label = label),
-                    colour = "#9ECAE1",  # lighter blue for faded labels
-                    size = labelSize * 0.85,
-                    max.overlaps = 20,
-                    box.padding = 0.4,
-                    point.padding = 0.3,
-                    force = 2,
-                    force_pull = 0.3,
-                    min.segment.length = 0.5,
-                    segment.colour = "grey70",
-                    segment.size = 0.3,
-                    seed = 42
-                )
-            }
-        } else {
-            p <- p + ggrepel::geom_text_repel(
-                data = col_df,
-                ggplot2::aes(x = x, y = y, label = label),
-                colour = "#2171B5", 
-                size = labelSize,
-                max.overlaps = 30,
-                box.padding = 0.4,
-                point.padding = 0.3,
-                force = 2,
-                force_pull = 0.3,
-                min.segment.length = 0.5,
-                segment.colour = "grey50",
-                segment.size = 0.4,
-                seed = 42
-            )
-        }
         
         # Caption
         caption_text <- "Red (\u25cb) = Row categories; Blue (\u25b2) = Column categories"

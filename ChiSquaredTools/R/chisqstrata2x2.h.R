@@ -415,7 +415,8 @@ chisqstrata2x2Base <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class
 #' The analysis provides automated interpretation based on four diagnostic
 #' scenarios that consider the joint pattern of test results. When cell counts
 #' contain zeros, the Haldane-Anscombe correction (adding 0.5 to all cells)
-#' is applied for odds ratio calculations and MH weights.
+#' is applied to the stratum-specific and marginal odds ratios and in Woolf's
+#' test; the Mantel-Haenszel common odds ratio uses the observed counts.
 #' 
 #' This facility requires 2×2 tables only (both row and column variables
 #' must have exactly two levels).
@@ -440,7 +441,9 @@ chisqstrata2x2Base <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class
 #'     rows = 'Survival',
 #'     cols = 'Gender',
 #'     strata = 'Class',
-#'     counts = 'Count'
+#'     counts = 'Count',
+#'     rowRef = 'Yes',
+#'     colRef = 'Female'
 #' )
 #'}
 #' @param data the data as a data frame

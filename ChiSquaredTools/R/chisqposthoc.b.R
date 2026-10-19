@@ -136,7 +136,8 @@ chisqposthocClass <- R6::R6Class(
       
       # Pre-build BS Outlier Detail table rows (up to bsKmax)
       bs_detail_table <- self$results$bsOutlierDetailTable
-      k_max <- self$options$bsKmax
+      # (at most I x J - 1 cells can be set aside, as in the computation)
+      k_max <- min(self$options$bsKmax, I * J - 1)
       for (k in seq_len(k_max)) {
         bs_detail_table$addRow(rowKey = k, values = list(rank = k))
       }
@@ -1520,9 +1521,6 @@ chisqposthocClass <- R6::R6Class(
     # -------------------------------------------------------------------------
     # Populate Backwards-Stepping Outlier Detail Table
     # -------------------------------------------------------------------------
-    # -------------------------------------------------------------------------
-    # Populate Backwards-Stepping Outlier Detail Table
-    # -------------------------------------------------------------------------
     .populateBSOutlierDetailTable = function(results, rowVar, colVar) {
       
       table <- self$results$bsOutlierDetailTable
@@ -1530,7 +1528,7 @@ chisqposthocClass <- R6::R6Class(
       table$setTitle(paste0("Backwards-Stepping: Identified Cells (by extremeness)"))
       
       detail_list <- results$detail_list
-      k_max <- self$options$bsKmax
+      k_max <- table$rowCount  # rows pre-built in .init(): min(bsKmax, I x J - 1)
       actual_identified <- length(detail_list)
       
       # Use setRow on pre-built rows, but only populate rows with actual data
@@ -1766,7 +1764,7 @@ chisqposthocClass <- R6::R6Class(
           
           <p><strong>Output interpretation:</strong> Two outputs are provided: (1) a matrix showing deleted residuals for the <i>k</i><sub>max</sub> most extreme cells, with detected outliers highlighted; (2) a detail table listing cells in order of extremeness with their G² drop values. Positive deleted residuals indicate the cell contains more observations than expected (attraction); negative residuals indicate fewer than expected (repulsion). The G² drop quantifies how much each cell contributes to overall lack-of-fit—larger values indicate cells that deviate more substantially from the independence model.</p>
           
-          <p><strong>Setting <i>k</i><sub>max</sub>:</strong> The parameter <i>k</i><sub>max</sub> determines the maximum number of potential outliers to examine. Simonoff (1988) suggests this might be 20%-30% of cells, though context should guide the choice. Setting <i>k</i><sub>max</sub> too low risks missing outliers; setting it too high increases computation but does not inflate the false positive rate (the Bonferroni correction accounts for all <i>RC</i> cells regardless of <i>k</i><sub>max</sub>).</p>
+          <p><strong>Setting <i>k</i><sub>max</sub>:</strong> The parameter <i>k</i><sub>max</sub> determines the maximum number of potential outliers to examine. Simonoff (1988) suggests this might be 20%-30% of cells, though context should guide the choice. Setting <i>k</i><sub>max</sub> too low risks missing outliers; setting it too high increases computation but does not inflate the false positive rate (the Bonferroni correction accounts for all <i>RC</i> cells regardless of <i>k</i><sub>max</sub>). At most <i>RC</i> − 1 cells can be set aside, so a larger <i>k</i><sub>max</sub> is reduced to <i>RC</i> − 1.</p>
         ")
       }
       
@@ -1784,7 +1782,7 @@ chisqposthocClass <- R6::R6Class(
     
     <p><strong>Statistical inference:</strong> PEM / Sakoda D Local is accompanied by bootstrap confidence intervals, allowing formal hypothesis testing. If the confidence interval excludes zero, the cell's deviation from independence is statistically significant. This combination of interpretable effect size and inferential capacity makes PEM particularly powerful for identifying and quantifying specific patterns of association through significant strong attraction and repulsion.</p>
     
-    <p><strong>Forest plot visualisation:</strong> The optional PEM forest plot provides a ranked visual summary of all cell-level associations. Each cell is represented by a point (the PEM estimate) with horizontal whiskers showing the bootstrap confidence interval (Lefèvre & Champely 2009). Positive values (attraction) appear in gold/amber, negative values (repulsion) in maroon/red. Saturated colours indicate statistically significant associations (confidence interval excludes zero), whilst desaturated colours indicate non-significant associations. The vertical line at zero represents independence. This visualisation allows rapid identification of the strongest and most reliable patterns of attraction and repulsion, sorted by effect magnitude. Note that because PEM is bounded (−100% to +100%) and its sampling distribution is typically skewed, bootstrap confidence intervals are often asymmetric around the point estimate; this is expected behaviour consistent with the percentile bootstrap method (Efron & Tibshirani 1993; Lefèvre & Champely 2009).</p>
+    <p><strong>Forest plot visualisation:</strong> The optional PEM forest plot provides a ranked visual summary of all cell-level associations. Each cell is represented by a point (the PEM estimate) with horizontal whiskers showing the bootstrap confidence interval (Lefèvre & Champely 2009). Statistically significant associations (confidence interval excludes zero) appear in gold when positive (attraction) and in maroon when negative (repulsion); non-significant associations appear in grey. The vertical line at zero represents independence. This visualisation allows rapid identification of the strongest and most reliable patterns of attraction and repulsion, sorted by effect magnitude. Note that because PEM is bounded (−100% to +100%) and its sampling distribution is typically skewed, bootstrap confidence intervals are often asymmetric around the point estimate; this is expected behaviour consistent with the percentile bootstrap method (Efron & Tibshirani 1993; Lefèvre & Champely 2009).</p>
   ")
       }
       
@@ -1880,7 +1878,7 @@ chisqposthocClass <- R6::R6Class(
           
           <p><strong>Important notes:</strong> (1) DEP requires designating which variable is dependent and which column category is the outcome of interest. This asymmetric design differs from measures like adjusted standardised residuals, which treat rows and columns symmetrically. (2) The method originates from a preprint and has not yet undergone peer review. Users should interpret results with appropriate caution.</p>
           
-          <p><strong>Forest plot visualisation:</strong> The optional DEP forest plot displays each row category's DEP value as a point. Because significance bounds vary across rows (depending on each row's marginal totals), each row shows its own acceptance region as a horizontal grey segment. Points falling outside their row's acceptance region represent statistically significant associations. Positive values (attraction) appear in gold/amber, negative values (repulsion) in maroon/red. Saturated colours indicate significance; desaturated colours indicate non-significance. The vertical line at zero represents independence.</p>
+          <p><strong>Forest plot visualisation:</strong> The optional DEP forest plot displays each row category's DEP value as a point. Because significance bounds vary across rows (depending on each row's marginal totals), each row shows its own acceptance region as a horizontal grey segment. Points falling outside their row's acceptance region represent statistically significant associations. Significant positive values (attraction) appear in gold, significant negative values (repulsion) in maroon, and non-significant values in grey. The vertical line at zero represents independence.</p>
         ")
       }
       
@@ -1898,146 +1896,39 @@ chisqposthocClass <- R6::R6Class(
       plot_data <- image$state
       
       if (is.null(plot_data) || nrow(plot_data) == 0) {
-        # Display message if no data after filtering
-        plot.new()
-        text(0.5, 0.5, "No cells match the current filter.", cex = 1.2, col = "grey50")
+        # Message instead of an empty plot when the filter leaves no cells
+        print(ggplot2::ggplot() + ggtheme + ggplot2::theme_void() +
+                ggplot2::annotate("text", x = 0, y = 0, size = 5, colour = "grey50",
+                                  label = "No cells match the current filter."))
         return(TRUE)
       }
       
-      # Convert label to factor with current order (already sorted by pem)
+      # Keep the current order (already sorted by PEM), first row at the bottom
       plot_data$label <- factor(plot_data$label, levels = plot_data$label)
+      # Point colours: maroon for significant negative, goldenrod for
+      # significant positive, grey for non-significant cells
+      catCols <- c("Significant negative" = "#8B1A1A", "Significant positive" = "#DAA520",
+                   "Non-significant" = "#A6A6A6")
+      plot_data$category <- factor(ifelse(!plot_data$significant, "Non-significant",
+        ifelse(plot_data$pem < 0, "Significant negative", "Significant positive")),
+        levels = names(catCols))
       
-      # Define colours: maroon for negative, goldenrod for positive
-      # Desaturated versions for non-significant cells
-      col_neg_sig <- "#8B1A1A"
-      col_pos_sig <- "#DAA520"
-      col_neg_nonsig <- "#C4A0A0"
-      col_pos_nonsig <- "#D4C890"  # Slightly darker for visibility
+      # jamovi theme first: it carries its own colour scales, which would
+      # otherwise replace the manual scales below
+      plt <- ggplot2::ggplot(plot_data, ggplot2::aes(y = label)) + ggtheme +
+        ggplot2::geom_vline(xintercept = 0, colour = "#808080", linewidth = 0.7) +
+        ggplot2::geom_errorbar(ggplot2::aes(xmin = lower, xmax = upper),
+                               width = 0.2, colour = "#505050", linewidth = 0.6,
+                               orientation = "y", na.rm = TRUE) +
+        ggplot2::geom_point(ggplot2::aes(x = pem, colour = category), size = 3) +
+        ggplot2::scale_colour_manual(values = catCols, drop = TRUE, name = NULL) +
+        ggplot2::scale_x_continuous(limits = c(-110, 110), breaks = seq(-100, 100, by = 50)) +
+        ggplot2::labs(x = "PEM (%)", y = NULL,
+                      title = "PEM Scores with Bootstrap Confidence Intervals") +
+        ggplot2::theme(plot.title = ggplot2::element_text(hjust = 0.5),
+                       legend.position = "bottom")
       
-      point_cols <- ifelse(
-        plot_data$pem < 0,
-        ifelse(plot_data$significant, col_neg_sig, col_neg_nonsig),
-        ifelse(plot_data$significant, col_pos_sig, col_pos_nonsig)
-      )
-      
-      # Calculate margins for long labels
-      max_label_chars <- max(nchar(as.character(plot_data$label)))
-      left_margin <- max(8, max_label_chars * 0.45)
-      
-      # Set up plot
-      par(
-        mar = c(4, left_margin, 3, 2) + 0.1,
-        family = "sans"
-      )
-      
-      n_points <- nrow(plot_data)
-      
-      # Create empty plot
-      plot(
-        x = NULL, y = NULL,
-        xlim = c(-110, 110),
-        ylim = c(0.5, n_points + 0.5),
-        xlab = "",
-        ylab = "",
-        axes = FALSE,
-        frame.plot = FALSE
-      )
-      
-      # Add vertical reference line at zero
-      abline(v = 0, lty = 1, col = "#808080", lwd = 1.5)
-      
-      # Add light horizontal grid lines for readability
-      abline(h = seq_len(n_points), col = "#E8E8E8", lwd = 0.5)
-      
-      # Y positions
-      y_pos <- seq_len(n_points)
-      
-      # Draw confidence interval whiskers
-      segments(
-        x0 = plot_data$lower,
-        x1 = plot_data$upper,
-        y0 = y_pos,
-        y1 = y_pos,
-        col = "#505050",
-        lwd = 1.3
-      )
-      
-      # Draw whisker caps
-      segments(
-        x0 = plot_data$lower,
-        x1 = plot_data$lower,
-        y0 = y_pos - 0.08,
-        y1 = y_pos + 0.08,
-        col = "#505050",
-        lwd = 1.3
-      )
-      segments(
-        x0 = plot_data$upper,
-        x1 = plot_data$upper,
-        y0 = y_pos - 0.08,
-        y1 = y_pos + 0.08,
-        col = "#505050",
-        lwd = 1.3
-      )
-      
-      # Draw point estimates as filled circles
-      points(
-        x = plot_data$pem,
-        y = y_pos,
-        pch = 19,
-        col = point_cols,
-        cex = 1.4
-      )
-      
-      # Add axes
-      axis(1, at = seq(-100, 100, by = 50), col = "#808080", col.axis = "#505050")
-      axis(2, at = y_pos, labels = plot_data$label, las = 1, tick = FALSE,
-           col.axis = "#505050", cex.axis = 0.85)
-      
-      # Add labels
-      mtext("PEM (%)", side = 1, line = 2.5, col = "#505050")
-      mtext("PEM Scores with Bootstrap Confidence Intervals", side = 3, line = 1,
-            font = 2, cex = 1.1, col = "#303030")
-      
-      # Build legend dynamically based on what categories are present in the data
-      has_neg_sig <- any(plot_data$pem < 0 & plot_data$significant)
-      has_neg_nonsig <- any(plot_data$pem < 0 & !plot_data$significant)
-      has_pos_sig <- any(plot_data$pem >= 0 & plot_data$significant)
-      has_pos_nonsig <- any(plot_data$pem >= 0 & !plot_data$significant)
-      
-      legend_labels <- c()
-      legend_cols <- c()
-      
-      if (has_neg_sig) {
-        legend_labels <- c(legend_labels, "Significant negative")
-        legend_cols <- c(legend_cols, col_neg_sig)
-      }
-      if (has_neg_nonsig) {
-        legend_labels <- c(legend_labels, "Non-significant negative")
-        legend_cols <- c(legend_cols, col_neg_nonsig)
-      }
-      if (has_pos_sig) {
-        legend_labels <- c(legend_labels, "Significant positive")
-        legend_cols <- c(legend_cols, col_pos_sig)
-      }
-      if (has_pos_nonsig) {
-        legend_labels <- c(legend_labels, "Non-significant positive")
-        legend_cols <- c(legend_cols, col_pos_nonsig)
-      }
-      
-      # Only draw legend if there are items to show
-      if (length(legend_labels) > 0) {
-        legend(
-          "bottomright",
-          legend = legend_labels,
-          pch = 19,
-          col = legend_cols,
-          bty = "n",
-          cex = 0.75,
-          text.col = "#505050"
-        )
-      }
-      
+      print(plt)
       TRUE
     },
     
@@ -2045,146 +1936,44 @@ chisqposthocClass <- R6::R6Class(
     # Render DEP forest plot
     # -------------------------------------------------------------------------
     .depPlot = function(image, ggtheme, theme, ...) {
-      
       plot_data <- image$state
-      
       if (is.null(plot_data) || nrow(plot_data) == 0) {
-        plot.new()
-        text(0.5, 0.5, "No data available for DEP plot.", cex = 1.2, col = "grey50")
+        print(ggplot2::ggplot() + ggtheme + ggplot2::theme_void() +
+                ggplot2::annotate("text", x = 0, y = 0, size = 5, colour = "grey50",
+                                  label = "No data available for DEP plot."))
         return(TRUE)
       }
-      
       # Get outcome category from attribute
       outcome_cat <- attr(plot_data, "outcome")
       if (is.null(outcome_cat)) outcome_cat <- ""
       
-      # Convert label to factor with current order (already sorted by dep)
+      # Keep the current order (already sorted by DEP), first row at the bottom
       plot_data$label <- factor(plot_data$label, levels = plot_data$label)
+      # Point colours: maroon for significant negative, goldenrod for
+      # significant positive, grey for non-significant cells
+      catCols <- c("Significant negative" = "#8B1A1A", "Significant positive" = "#DAA520",
+                   "Non-significant" = "#A6A6A6")
+      plot_data$category <- factor(ifelse(!plot_data$significant, "Non-significant",
+        ifelse(plot_data$dep < 0, "Significant negative", "Significant positive")),
+        levels = names(catCols))
       
-      # Define colours: maroon for negative, goldenrod for positive
-      col_neg_sig <- "#8B1A1A"
-      col_pos_sig <- "#DAA520"
-      col_neg_nonsig <- "#C4A0A0"
-      col_pos_nonsig <- "#D4C890"
+      # jamovi theme first: it carries its own colour scales, which would
+      # otherwise replace the manual scales below
+      plt <- ggplot2::ggplot(plot_data, ggplot2::aes(y = label)) + ggtheme +
+        ggplot2::geom_vline(xintercept = 0, colour = "#808080", linewidth = 0.7) +
+        # Acceptance region of each row (grey band)
+        ggplot2::geom_linerange(ggplot2::aes(xmin = sig_lower, xmax = sig_upper,
+                                             linetype = "Acceptance region"),
+                                colour = "#D0D0D0", linewidth = 2.5) +
+        ggplot2::geom_point(ggplot2::aes(x = dep, colour = category), size = 3.2) +
+        ggplot2::scale_colour_manual(values = catCols, drop = TRUE, name = NULL) +
+        ggplot2::scale_linetype_manual(values = c("Acceptance region" = "solid"), name = NULL) +
+        ggplot2::scale_x_continuous(limits = c(-1.1, 1.1), breaks = seq(-1, 1, by = 0.5)) +
+        ggplot2::labs(x = "DEP", y = NULL, title = paste0("DEP: Outcome = ", outcome_cat)) +
+        ggplot2::theme(plot.title = ggplot2::element_text(hjust = 0.5),
+                       legend.position = "bottom")
       
-      point_cols <- ifelse(
-        plot_data$dep < 0,
-        ifelse(plot_data$significant, col_neg_sig, col_neg_nonsig),
-        ifelse(plot_data$significant, col_pos_sig, col_pos_nonsig)
-      )
-      
-      # Calculate margins for labels
-      max_label_chars <- max(nchar(as.character(plot_data$label)))
-      left_margin <- max(8, max_label_chars * 0.45)
-      
-      par(
-        mar = c(4, left_margin, 4, 2) + 0.1,
-        family = "sans"
-      )
-      
-      n_points <- nrow(plot_data)
-      
-      # Determine x-axis range (DEP is bounded -1 to +1)
-      x_range <- c(-1.1, 1.1)
-      
-      # Create empty plot
-      plot(
-        x = NULL, y = NULL,
-        xlim = x_range,
-        ylim = c(0.5, n_points + 0.5),
-        xlab = "",
-        ylab = "",
-        axes = FALSE,
-        frame.plot = FALSE
-      )
-      
-      # Add vertical reference line at zero (independence)
-      abline(v = 0, lty = 1, col = "#808080", lwd = 1.5)
-      
-      # Add light horizontal grid lines
-      abline(h = seq_len(n_points), col = "#E8E8E8", lwd = 0.5)
-      
-      # Draw individual significance bounds for each row as small horizontal segments
-      y_pos <- seq_len(n_points)
-      for (i in seq_len(n_points)) {
-        segments(
-          x0 = plot_data$sig_lower[i], y0 = y_pos[i],
-          x1 = plot_data$sig_upper[i], y1 = y_pos[i],
-          col = "#D0D0D0", lwd = 4, lend = 1
-        )
-      }
-      
-      # Draw point estimates
-      points(
-        x = plot_data$dep,
-        y = y_pos,
-        pch = 19,
-        col = point_cols,
-        cex = 1.6
-      )
-      
-      # Add axes
-      axis(1, at = seq(-1, 1, by = 0.5), col = "#808080", col.axis = "#505050")
-      axis(2, at = y_pos, labels = plot_data$label, las = 1, tick = FALSE,
-           col.axis = "#505050", cex.axis = 0.85)
-      
-      # Add labels
-      mtext("DEP", side = 1, line = 2.5, col = "#505050")
-      
-      # Build title with outcome category
-      plot_title <- paste0("DEP: Outcome = ", outcome_cat)
-      mtext(plot_title, side = 3, line = 1,
-            font = 2, cex = 1.1, col = "#303030")
-      
-      # Build legend dynamically
-      has_neg_sig <- any(plot_data$dep < 0 & plot_data$significant)
-      has_neg_nonsig <- any(plot_data$dep < 0 & !plot_data$significant)
-      has_pos_sig <- any(plot_data$dep >= 0 & plot_data$significant)
-      has_pos_nonsig <- any(plot_data$dep >= 0 & !plot_data$significant)
-      
-      legend_labels <- c()
-      legend_cols <- c()
-      legend_pch <- c()
-      
-      if (has_neg_sig) {
-        legend_labels <- c(legend_labels, "Significant negative")
-        legend_cols <- c(legend_cols, col_neg_sig)
-        legend_pch <- c(legend_pch, 19)
-      }
-      if (has_neg_nonsig) {
-        legend_labels <- c(legend_labels, "Non-significant negative")
-        legend_cols <- c(legend_cols, col_neg_nonsig)
-        legend_pch <- c(legend_pch, 19)
-      }
-      if (has_pos_sig) {
-        legend_labels <- c(legend_labels, "Significant positive")
-        legend_cols <- c(legend_cols, col_pos_sig)
-        legend_pch <- c(legend_pch, 19)
-      }
-      if (has_pos_nonsig) {
-        legend_labels <- c(legend_labels, "Non-significant positive")
-        legend_cols <- c(legend_cols, col_pos_nonsig)
-        legend_pch <- c(legend_pch, 19)
-      }
-      
-      # Add significance bounds to legend
-      legend_labels <- c(legend_labels, "Acceptance region")
-      legend_cols <- c(legend_cols, "#D0D0D0")
-      legend_pch <- c(legend_pch, NA)
-      
-      if (length(legend_labels) > 0) {
-        legend(
-          "bottomright",
-          legend = legend_labels,
-          pch = legend_pch,
-          lwd = c(rep(NA, length(legend_pch) - 1), 4),
-          col = legend_cols,
-          bty = "n",
-          cex = 0.75,
-          text.col = "#505050"
-        )
-      }
-      
+      print(plt)
       TRUE
     },
     

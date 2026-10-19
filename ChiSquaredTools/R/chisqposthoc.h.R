@@ -592,21 +592,20 @@ chisqposthocBase <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class(
 #' - Goodman-Kruskal residuals
 #' - Dependence Evaluator Proportion (DEP)
 #' 
-#' Significant positive values are highlighted in red, negative with blue.
+#' Significant cells are highlighted in the tables.
 #' Significance tables automatically identify attraction/repulsion patterns.
 #' 
 #'
 #' @examples
-#' # Example with Titanic data
-#' data('Titanic')
-#' titanic_df <- as.data.frame(Titanic)
-#' titanic_expanded <- titanic_df[rep(seq_len(nrow(titanic_df)),
-#'                                    titanic_df$Freq), 1:4]
+#' # Example with the Titanic data (one row per cell, counts in 'Freq')
+#' titanic_df <- as.data.frame(datasets::Titanic)
 #'
-#' chisqposthoc(
-#'     data = titanic_expanded,
+#' ChiSquaredTools::chisqposthoc(
+#'     data = titanic_df,
 #'     rows = 'Class',
 #'     cols = 'Survived',
+#'     counts = 'Freq',
+#'     depOutcome = 'Yes',
 #'     stdres = TRUE,
 #'     pem = TRUE,
 #'     sidakCorrection = TRUE

@@ -121,7 +121,7 @@ options:
     - name: showMethodInfo
       title: Method explanations
       type: Bool
-      default: true
+      default: false
       description:
           R: >
             TRUE or FALSE (default), display detailed methodological 

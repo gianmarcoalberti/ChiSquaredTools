@@ -375,13 +375,13 @@
         `pages`="336-344"), 
     `krzanowski1993`=list(
         `type`="article", 
-        `author`=" Krzanowski, W. J.", 
+        `author`="Krzanowski, W. J.", 
         `year`=1993, 
         `title`="Attribute selection in correspondence analysis of incidence matrices", 
         `publisher`="Journal of the Royal Statistical Society: Series C (Applied Statistics)", 
         `volume`=42, 
         `issue`=3, 
-        `page`="529-541"), 
+        `pages`="529-541"), 
     `kvalseth2018a`=list(
         `type`="article", 
         `author`="Kv\u00E5lseth, T. O.", 

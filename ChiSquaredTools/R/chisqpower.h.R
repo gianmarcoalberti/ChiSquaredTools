@@ -257,7 +257,10 @@ chisqpowerResults <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class(
                     "nCols",
                     "alpha",
                     "power",
-                    "n")))
+                    "n",
+                    "esType",
+                    "esConventional",
+                    "effectSize")))
             self$add(jmvcore::Html$new(
                 options=options,
                 name="methodInfo",
@@ -310,7 +313,8 @@ chisqpowerBase <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class(
 #'
 #' @examples
 #' # A priori power analysis: How many participants needed?
-#' chisqpower(
+#' ChiSquaredTools::chisqpower(
+#'     data = data.frame(),
 #'     analysisType = 'apriori',
 #'     nRows = 3,
 #'     nCols = 4,
@@ -320,7 +324,8 @@ chisqpowerBase <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class(
 #' )
 #'
 #' # Post-hoc power analysis: What power did my study have?
-#' chisqpower(
+#' ChiSquaredTools::chisqpower(
+#'     data = data.frame(),
 #'     analysisType = 'posthoc',
 #'     nRows = 2,
 #'     nCols = 2,
@@ -330,7 +335,8 @@ chisqpowerBase <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class(
 #' )
 #'
 #' # Sensitivity analysis: What effect could I detect?
-#' chisqpower(
+#' ChiSquaredTools::chisqpower(
+#'     data = data.frame(),
 #'     analysisType = 'sensitivity',
 #'     nRows = 3,
 #'     nCols = 3,

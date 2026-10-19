@@ -228,3 +228,56 @@
     h  <- grDevices::chull(px, py)
     data.frame(x = px[c(h, h[1])], y = py[c(h, h[1])])
 }
+
+# ---------------------------------------------------------------------------
+# Resampling distribution plot (permutation / Monte Carlo), ggplot2 + jamovi
+# theme. The observed statistic is drawn as a dashed line with its p-value;
+# when it lies far beyond the simulated values, an arrow at the right edge
+# marks it as off scale (so the histogram is not squashed).
+# ---------------------------------------------------------------------------
+.ctDistPlot <- function(stats, observed, title, label, fill, ggtheme) {
+    B_extreme <- sum(stats >= observed)
+    p <- (B_extreme + 1) / (length(stats) + 1)
+    p_txt <- if (p < 0.001) "p < 0.001" else sprintf("p = %.3f", p)
+
+    df <- data.frame(stat = stats)
+    x_max_data <- max(stats)
+    off_scale <- observed > 1.5 * x_max_data && observed > 0
+
+    plt <- ggplot2::ggplot(df, ggplot2::aes(x = stat)) +
+        ggplot2::geom_histogram(bins = 30, fill = fill, colour = "white") +
+        ggplot2::labs(title = title, x = "χ² statistic", y = "Frequency") +
+        ggtheme +
+        ggplot2::theme(plot.title = ggplot2::element_text(hjust = 0.5))
+
+    # y position for the annotations (from the drawn histogram)
+    built <- ggplot2::ggplot_build(plt)
+    y_top <- max(built$data[[1]]$count)
+
+    if (!off_scale) {
+        x_rng <- range(c(stats, observed))
+        right_side <- observed <= x_rng[1] + 0.8 * diff(x_rng)
+        plt <- plt +
+            ggplot2::geom_vline(xintercept = observed, colour = "#C0392B",
+                                linetype = "dashed", linewidth = 0.9) +
+            ggplot2::annotate("text", x = observed, y = y_top * 0.85,
+                              label = paste0("  observed ", label, "  \n  ", p_txt, "  "),
+                              hjust = if (right_side) 0 else 1,
+                              colour = "#C0392B", fontface = "bold", size = 3.5)
+    } else {
+        x_edge <- x_max_data * 1.05
+        plt <- plt +
+            ggplot2::annotate("segment", x = x_max_data * 0.88, xend = x_edge,
+                              y = y_top * 0.5, yend = y_top * 0.5,
+                              colour = "#C0392B", linewidth = 0.9,
+                              arrow = grid::arrow(length = grid::unit(0.15, "inches"))) +
+            ggplot2::annotate("text", x = x_max_data * 0.86, y = y_top * 0.5,
+                              label = sprintf("observed %s = %.2f\n(off scale)\n%s", label, observed, p_txt),
+                              hjust = 1, colour = "#C0392B", fontface = "bold", size = 3.5)
+    }
+    plt
+}
+
+# Column names used inside ggplot2::aes() in the helpers above (declared so
+# that R CMD check does not report them as undefined global variables)
+utils::globalVariables(c("stat"))
