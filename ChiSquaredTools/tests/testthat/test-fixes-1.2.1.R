@@ -11,7 +11,7 @@ test_that("Lambda corrected reproduces Kvalseth (2018b) and uses eq. 32 for the 
         data = kvalseth, rows = "X", cols = "Y", counts = "n", rowRef = "x1", colRef = "y1",
         gkLambdaCorrected = TRUE)
     df <- res$resultsTable$asDF
-    colsDep <- measureRow(df, "^Lambda corrected \\(cols dependent")
+    colsDep <- measureRow(df, "^Lambda corrected \\(columns dependent")
     rowsDep <- measureRow(df, "^Lambda corrected \\(rows dependent")
     sym <- measureRow(df, "^Lambda corrected \\(symmetric")
     # Y|X in the paper (columns predicted from rows): 0.3642, 95% CI [0.32, 0.41]
@@ -38,7 +38,7 @@ test_that("Goodman-Kruskal tau labels match the variable being predicted", {
     tauRows <- (sum(sweep(p^2, 2, cj, "/")) - sum(ri^2)) / (1 - sum(ri^2))
     tauCols <- (sum(sweep(p^2, 1, ri, "/")) - sum(cj^2)) / (1 - sum(cj^2))
     expect_equal(measureRow(df, "^Tau \\(rows dependent")$value, tauRows, tolerance = 1e-8)
-    expect_equal(measureRow(df, "^Tau \\(cols dependent")$value, tauCols, tolerance = 1e-8)
+    expect_equal(measureRow(df, "^Tau \\(columns dependent")$value, tauCols, tolerance = 1e-8)
 })
 
 test_that("Yule's Q and Y share the odds ratio's p-value (2 x 2 and pairwise)", {

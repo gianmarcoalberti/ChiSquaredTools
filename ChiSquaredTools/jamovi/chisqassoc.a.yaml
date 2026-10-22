@@ -10,7 +10,8 @@ description:
         Comprehensive measures of categorical association organised by statistical foundation.
         
         Provides:
-        - Chi-squared-based measures (Phi, Cramér's V, Cohen's w, W-hat, etc.)
+        - Chi-squared-based measures (Phi, Cramér's V, Cohen's w, Contingency coefficient C, etc.)
+        - Distance-based measures (W-hat, Sakoda's D)
         - Margin-free measures (Yule's Q, Y, Odds Ratios)
         - PRE measures (Goodman-Kruskal Lambda and Tau)
         - Confidence intervals where available
@@ -225,11 +226,11 @@ options:
       default: false
       description:
           R: >
-            TRUE or FALSE (default), compute maximum-corrected Sakoda's D Global.
+            TRUE or FALSE (default), compute maximum-corrected Sakoda's D global.
             Corrects for the maximum achievable value in tables with asymmetric marginals.
 
     - name: sakodaLocal
-      title: Sakoda's D local / PEM
+      title: Sakoda's D local (PEM)
       type: Bool
       default: false
       description:
@@ -237,7 +238,7 @@ options:
             TRUE or FALSE (default), Sakoda's cell-level index of dissimilarity (D_ij),
             mathematically equivalent to Cibois's PEM (Percentage of Maximum deviation).
             Displays a table of local association values without confidence intervals.
-            For bootstrap CIs, use the Post-hoc Analysis facility.
+            For bootstrap CIs, use the Post-Hoc Analysis facility.
     
     - name: marginFree
       title: Margin-free measures (OR, Q, Y)
@@ -250,19 +251,19 @@ options:
             summary table. For larger tables: pairwise comparisons in separate tables.
 
     - name: rowRef
-      title: Row category of interest (OR)
+      title: Row category of interest (2×2 signed measures)
       type: Level
       variable: (rows)
       description:
-          ui: Select the row category to use as the category of interest for odds ratio calculation.
+          ui: Select the row category to use as the reference category for the signed 2×2 measures (Phi signed, Cole's C7, Zysno's φ*) and the odds ratio.
           R: The row level selected as the category of interest.
 
     - name: colRef
-      title: Column category of interest (OR)
+      title: Column category of interest (2×2 signed measures)
       type: Level
       variable: (cols)
       description:
-          ui: Select the column category to use as the category of interest for odds ratio calculation.
+          ui: Select the column category to use as the reference category for the signed 2×2 measures (Phi signed, Cole's C7, Zysno's φ*) and the odds ratio.
           R: The column level selected as the category of interest.
 
     # PRE measures

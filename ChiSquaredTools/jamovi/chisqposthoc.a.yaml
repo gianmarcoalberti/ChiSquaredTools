@@ -26,8 +26,7 @@ description:
         - Goodman-Kruskal residuals
         - Dependence Evaluator Proportion (DEP)
         
-        Significant cells are highlighted in the tables.
-        Significance tables automatically identify attraction/repulsion patterns.
+        Cells beyond the significance or effect-size thresholds are marked in red.
         
     R:
         dontrun: false
@@ -157,7 +156,7 @@ options:
             positive rates due to Bonferroni correction.
 
     - name: pem
-      title: PEM / Sakoda's D Local
+      title: Sakoda's D local (PEM)
       type: Bool
       default: false
       description:
@@ -259,8 +258,8 @@ options:
       default: false
       description:
           R: >
-            TRUE or FALSE (default: FALSE), display a diverging bar chart
-            of PEM values with bootstrap confidence intervals, sorted by magnitude
+            TRUE or FALSE (default: FALSE), display a forest plot of PEM
+            estimates with bootstrap confidence intervals, sorted by magnitude
     
     - name: pemPlotFilter
       title: PEM plot filter

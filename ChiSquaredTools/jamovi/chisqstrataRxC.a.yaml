@@ -16,12 +16,16 @@ description:
         - Stratum-specific chi-squared tests and Cramér's V corrected with 
           bootstrap 95% confidence intervals
         - Generalised Cochran-Mantel-Haenszel (CMH) test for conditional independence
-        - Log-linear likelihood ratio test for homogeneity of association patterns
+        - Pooled within-strata chi-squared test, used in place of the CMH test
+          when the strata are heterogeneous
+        - Log-linear likelihood ratio test for homogeneity of association patterns,
+          with a check for reversal of the residual pattern across strata
         - Weighted average of V corrected across strata (when homogeneity holds)
         
         The analysis provides automated interpretation based on the joint pattern 
         of test results, distinguishing between conditional independence, 
-        homogeneous association, and effect modification (interaction).
+        homogeneous association, effect modification (interaction) and a 
+        heterogeneous pattern without overall association.
         
         For 2×2 tables, use the dedicated "Stratified Analysis (2×2×K)" facility, 
         which provides odds ratios and specialised homogeneity tests.
@@ -106,7 +110,7 @@ options:
             If not provided, data are assumed to be in long format (one row per case).
 
     - name: nBootstrap
-      title: Number of bootstrap replicates
+      title: Bootstrap replications
       type: Integer
       default: 1000
       min: 100
@@ -138,7 +142,7 @@ options:
             the weighted average.
 
     - name: showDiagnosticTree
-      title: Diagnostic decision tree
+      title: Diagnostic decision path
       type: Bool
       default: true
       description:

@@ -5,6 +5,7 @@ chisqposthocClass <- R6::R6Class(
   "chisqposthocClass",
   inherit = chisqposthocBase,
   private = list(
+    .pemRounded = FALSE,   # counts rounded for the PEM bootstrap (reported in a note)
     
     # -------------------------------------------------------------------------
     # Initialise: populate dynamic options
@@ -53,12 +54,9 @@ chisqposthocClass <- R6::R6Class(
       
       # Pre-add rows (including total) - these will be filled with setRow()
       for (i in seq_len(I)) {
-        table$addRow(rowKey = paste0('row', i), values = list(
-          rowname = row_levels[i],
-          rowtotal = ''
-        ))
+        table$addRow(rowKey = paste0('row', i), values = list(rowname = row_levels[i]))
       }
-      table$addRow(rowKey = 'total', values = list(rowname = 'Total', rowtotal = ''))
+      table$addRow(rowKey = 'total', values = list(rowname = 'Total'))
       
       # ---------------------------------------------------------------------
       # 2. Pre-build metric tables that use setRow() pattern
@@ -96,20 +94,21 @@ chisqposthocClass <- R6::R6Class(
       # ---------------------------------------------------------------------
       
       # PEM Table - matrix format like other metrics
-      private$.prebuildMetricTable('pemTable', 'PEM with Confidence Intervals', row_levels, col_levels, rowVar, colVar)
+      private$.prebuildMetricTable('pemTable', 'PEM with Confidence Intervals', row_levels, col_levels, rowVar, colVar, col_type = 'text')
+      
       
       # GK Residuals Tables (Columns as Predictor)
       gk_col_table <- self$results$gkresColTable
       gk_col_table$addColumn(name = 'rowname', title = rowVar, type = 'text')
       for (j in seq_along(col_levels)) {
-        gk_col_table$addColumn(name = paste0('col', j), title = col_levels[j], type = 'text', superTitle = colVar)
+        gk_col_table$addColumn(name = paste0('col', j), title = col_levels[j], type = 'number', superTitle = colVar)
       }
       
       # GK Residuals Tables (Rows as Predictor)
       gk_row_table <- self$results$gkresRowTable
       gk_row_table$addColumn(name = 'rowname', title = rowVar, type = 'text')
       for (j in seq_along(col_levels)) {
-        gk_row_table$addColumn(name = paste0('col', j), title = col_levels[j], type = 'text', superTitle = colVar)
+        gk_row_table$addColumn(name = paste0('col', j), title = col_levels[j], type = 'number', superTitle = colVar)
       }
       
       # Pre-build GK Col table rows
@@ -126,7 +125,7 @@ chisqposthocClass <- R6::R6Class(
       bs_matrix_table <- self$results$bsOutlierMatrixTable
       bs_matrix_table$addColumn(name = 'rowname', title = rowVar, type = 'text')
       for (j in seq_along(col_levels)) {
-        bs_matrix_table$addColumn(name = paste0('col', j), title = col_levels[j], type = 'text', superTitle = colVar)
+        bs_matrix_table$addColumn(name = paste0('col', j), title = col_levels[j], type = 'number', superTitle = colVar)
       }
       
       # Pre-build BS Outlier Matrix rows
@@ -152,13 +151,16 @@ chisqposthocClass <- R6::R6Class(
       }
     },
     
-    .prebuildMetricTable = function(table_name, title_base, row_levels, col_levels, rowVar, colVar) {
+    .prebuildMetricTable = function(table_name, title_base, row_levels, col_levels, rowVar, colVar, col_type = 'number') {
       table <- self$results[[table_name]]
       table$setTitle(paste0(title_base, ": ", rowVar, " × ", colVar))
       
+      # col_type: 'number' for tables holding one number per cell (the user's
+      # number format applies); 'text' for the PEM table, whose cells hold the
+      # estimate and its interval together, "value [lower, upper]"
       table$addColumn(name = 'rowname', title = rowVar, type = 'text')
       for (j in seq_along(col_levels)) {
-        table$addColumn(name = paste0('col', j), title = col_levels[j], type = 'number', superTitle = colVar)
+        table$addColumn(name = paste0('col', j), title = col_levels[j], type = col_type, superTitle = colVar)
       }
       
       I <- length(row_levels)
@@ -465,7 +467,7 @@ chisqposthocClass <- R6::R6Class(
         )
       } else {
         notice_text <- paste0(
-          "Values greater than 1.96 or less than -1.96 indicate significant deviation (α = 0.05). ",
+          "Values greater than 1.96 or less than \u22121.96 indicate significant deviation (α = 0.05). ",
           "See Agresti (2013)."
         )
       }
@@ -592,11 +594,18 @@ chisqposthocClass <- R6::R6Class(
       n_reps <- self$options$bootstrapReps
       
       notice_text <- sprintf(
-        "PEM (Sakoda's D Local × 100) ranges -100%% to +100%%. Empirical thresholds: <5%% negligible, 5-10%% weak, ≥10%% interesting/noteworthy, ≥50%% exceptional. Significance: %.0f%% bootstrap CI (%d reps) excludes zero. See Cibois (1993); Lefèvre & Champely (2009); Sakoda (1981).",
+        "PEM (Sakoda's D local × 100) ranges -100%% to +100%%. Empirical thresholds: <5%% negligible, 5-10%% weak, ≥10%% interesting/noteworthy, ≥50%% exceptional. Significance: %.0f%% bootstrap CI (%d reps) excludes zero. See Cibois (1993); Lefèvre & Champely (2009); Sakoda (1981).",
         conf_level, n_reps
       )
       
       table$setNote('interp_pem', notice_text, init = FALSE)
+      if (isTRUE(private$.pemRounded)) {
+        table$setNote('pem_rounded', paste0(
+          "The counts are not whole numbers: they were rounded to integers for the bootstrap ",
+          "resampling of cases (the PEM values themselves use the counts as given)."), init = FALSE)
+      } else {
+        table$setNote('pem_rounded', NULL, init = FALSE)
+      }
     },
     
     .addGKResNotice = function() {
@@ -677,20 +686,17 @@ chisqposthocClass <- R6::R6Class(
             # isTRUE(): a missing bootstrap bound must not stop the analysis
             ci_excludes_zero <- isTRUE(ci_lo > 0) || isTRUE(ci_hi < 0)
             
-            if (ci_excludes_zero) {
-              # Apply red colour to significant values
-              cell_text <- sprintf(
-                "<span style='color: #C00000;'>%.1f [%.1f, %.1f]</span>", 
-                pem_val, ci_lo, ci_hi
-              )
-            } else {
-              cell_text <- sprintf("%.1f [%.1f, %.1f]", pem_val, ci_lo, ci_hi)
-            }
+            cell_text <- sprintf("%.1f [%.1f, %.1f]", pem_val, ci_lo, ci_hi)
           }
           
           row_values[[paste0("col", j)]] <- cell_text
         }
         table$setRow(rowKey = paste0('row', i), values = row_values)
+        # Red (jamovi's own Cell.NEGATIVE, theme-safe) where the interval excludes zero
+        for (j in seq_len(J)) {
+          if (isTRUE(ci_lower[i, j] > 0) || isTRUE(ci_upper[i, j] < 0))
+            table$addFormat(rowKey = paste0('row', i), col = paste0('col', j), format = jmvcore::Cell.NEGATIVE)
+        }
       }
     },
     
@@ -755,13 +761,18 @@ chisqposthocClass <- R6::R6Class(
       
       pem_boot <- array(NA, dim = c(I, J, B))
       
-      # Build expanded data correctly: one row per observation
-      # Iterate through cells to ensure correct row/col assignment
+      # Build expanded data correctly: one row per observation.
+      # The bootstrap resamples cases, so the counts must be whole numbers:
+      # non-integer (e.g. weighted) counts are rounded here, once, for the
+      # bootstrap only (the PEM point estimates above use the counts as
+      # given); a table note reports the rounding.
+      N_boot <- round(N_matrix)
+      private$.pemRounded <- any(abs(N_matrix - N_boot) > 1e-8)
       expanded_rows <- integer(0)
       expanded_cols <- integer(0)
       for (i in 1:I) {
         for (j in 1:J) {
-          count <- N_matrix[i, j]
+          count <- N_boot[i, j]
           if (count > 0) {
             expanded_rows <- c(expanded_rows, rep(i, count))
             expanded_cols <- c(expanded_cols, rep(j, count))
@@ -1175,7 +1186,7 @@ chisqposthocClass <- R6::R6Class(
       # -----------------------------------------------------------------------
       
       # Build matrix of deleted residuals for colour-coded display
-      del_res_matrix <- matrix(NA, nr, nc)
+      del_res_matrix <- matrix(NA_real_, nr, nc)   # numeric NA (a logical NA renders as NaN in jamovi)
       dimnames(del_res_matrix) <- list(row_names, col_names)
       
       # Build detection matrix (TRUE = detected outlier)
@@ -1359,9 +1370,12 @@ chisqposthocClass <- R6::R6Class(
       for (i in seq_len(I)) {
         row_values <- list()
         for (j in seq_len(J)) {
-          value <- metric_matrix[i, j]
-          cell_text <- if (is.na(value)) "" else sprintf("%.3f", value)
-          row_values[[paste0("col", j)]] <- cell_text
+          # numeric value into a number column (the Number format setting applies);
+          # values within rounding of zero are set to 0 so that "-0.000" cannot appear
+          v <- metric_matrix[i, j]
+          if (is.na(v) || !is.finite(v)) next   # leave the cell unset (renders blank)
+          if (abs(v) < 5e-7) v <- 0
+          row_values[[paste0("col", j)]] <- v
         }
         table$setRow(rowKey = paste0('row', i), values = row_values)
         
@@ -1425,13 +1439,10 @@ chisqposthocClass <- R6::R6Class(
           significance = sig_text
         ))
         
-        # Apply highlighting to DEP value if significant
+        # Mark a significant DEP value with a footnote (native marker)
         if (!is.na(result$dep) && result$significant) {
-          table$addFormat(
-            rowKey = i,
-            col = 'depValue',
-            format = jmvcore::Cell.NEGATIVE
-          )
+          table$addFootnote(rowKey = i, col = 'depValue', "Outside the significance bounds")
+          table$addFormat(rowKey = i, col = 'depValue', format = jmvcore::Cell.NEGATIVE)   # red, kept pending the Phase 4 decision
         }
       }
     },
@@ -1460,12 +1471,8 @@ chisqposthocClass <- R6::R6Class(
         
         for (j in 1:J) {
           value <- gk_matrix[i, j]
-          
-          formatted_value <- sprintf("%.3f", value)
-          formatted_value <- paste0("<span style='display: block; text-align: center;'>", 
-                                    formatted_value, "</span>")
-          
-          row_values[[paste0("col", j)]] <- formatted_value
+          if (is.na(value) || !is.finite(value)) next
+          row_values[[paste0("col", j)]] <- value
         }
         
         table$setRow(rowKey = i, values = row_values)
@@ -1494,27 +1501,19 @@ chisqposthocClass <- R6::R6Class(
         row_values <- list(rowname = row_names[i])
         
         for (j in 1:J) {
-          value <- del_res_matrix[i, j]
-          is_detected <- detection_matrix[i, j]
-          
-          if (is.na(value)) {
-            formatted_value <- "—"
-          } else {
-            # Format the numeric value
-            num_str <- sprintf("%.3f", value)
-            
-            # Apply red colouring if this cell is detected as an outlier
-            if (is_detected) {
-              formatted_value <- sprintf("<span style='color: #C00000;'>%s</span>", num_str)
-            } else {
-              formatted_value <- num_str
-            }
-          }
-          
-          row_values[[paste0("col", j)]] <- formatted_value
+          v <- del_res_matrix[i, j]
+          # cells not reached by the identification phase are left unset
+          # (writing NA or NaN into a number column shows "NaN" in some
+          # jamovi versions); unset cells render as blank
+          if (!is.na(v) && is.finite(v)) row_values[[paste0("col", j)]] <- v
         }
         
         table$setRow(rowKey = i, values = row_values)
+        # Red (Cell.NEGATIVE) for the cells detected as outliers
+        for (j in 1:J) {
+          if (isTRUE(detection_matrix[i, j]))
+            table$addFormat(rowKey = i, col = paste0("col", j), format = jmvcore::Cell.NEGATIVE)
+        }
       }
     },
     
@@ -1528,37 +1527,22 @@ chisqposthocClass <- R6::R6Class(
       table$setTitle(paste0("Backwards-Stepping: Identified Cells (by extremeness)"))
       
       detail_list <- results$detail_list
-      k_max <- table$rowCount  # rows pre-built in .init(): min(bsKmax, I x J - 1)
       actual_identified <- length(detail_list)
       
-      # Use setRow on pre-built rows, but only populate rows with actual data
-      for (i in seq_len(k_max)) {
-        if (i <= actual_identified && !is.null(detail_list[[i]])) {
-          item <- detail_list[[i]]
-          
-          # Format cell name with actual level names
-          cell_name <- paste0(item$row_name, " / ", item$col_name)
-          
-          # Format detected column (plain text, no colour)
-          detected_text <- if (item$detected) "Yes" else "No"
-          
-          table$setRow(rowKey = i, values = list(
-            rank = item$rank,
-            cell = cell_name,
-            delRes = round(item$deleted_residual, 3),
-            g2Drop = round(item$g2_drop, 3),
-            detected = detected_text
-          ))
-        } else {
-          # Hide unused pre-built rows by setting them invisible or blank
-          table$setRow(rowKey = i, values = list(
-            rank = '',
-            cell = '',
-            delRes = '',
-            g2Drop = '',
-            detected = ''
-          ))
-        }
+      # The rows pre-built in .init() number min(bsKmax, I x J - 1); when
+      # identification stops earlier the surplus rows are removed rather than
+      # left blank, so the table shows exactly the cells examined
+      table$deleteRows()
+      for (i in seq_len(actual_identified)) {
+        item <- detail_list[[i]]
+        if (is.null(item)) next
+        table$addRow(rowKey = i, values = list(
+          rank = item$rank,
+          cell = paste0(item$row_name, " / ", item$col_name),
+          delRes = round(item$deleted_residual, 3),
+          g2Drop = round(item$g2_drop, 3),
+          detected = if (item$detected) "Yes" else "No"
+        ))
       }
     },
     
@@ -1730,7 +1714,7 @@ chisqposthocClass <- R6::R6Class(
           
           <p>The index has immediate operational meaning: a value of 1.40 indicates that the observed count is 140% higher than expected under independence—in other words, knowing the row category increases the probability of the column category by 140% compared to the baseline marginal probability. A value of −0.50 means the observed count is 50% lower than expected—the probability is halved when the row category is known. Zero indicates perfect independence for that cell.</p>
           
-          <p><strong>Connection to χ²:</strong> The Quetelet index has an elegant relationship to the overall chi-squared statistic. Specifically, the average of all Quetelet index values across cells, weighted by their expected counts, equals the phi-squared statistic (φ² = χ²/<i>N</i>). This establishes an operational interpretation for the chi-squared test itself: it measures the average proportional deviation from independence across the entire table. Values exceeding 1.0 (or falling below −0.50) are generally considered noteworthy, though these thresholds are empirical rather than based on formal probability distributions.</p>
+          <p><strong>Connection to χ²:</strong> The Quetelet index has an elegant relationship to the overall chi-squared statistic. Specifically, the average of all Quetelet index values across cells, weighted by the observed cell proportions (Σ <i>p</i><sub><i>ij</i></sub> <i>q</i><sub><i>ij</i></sub>), equals the phi-squared statistic (φ² = χ²/<i>N</i>) (Mirkin 2001). Weighting by the expected proportions would instead give zero, since the deviations from independence sum to zero. This establishes an operational interpretation for the chi-squared test itself: it measures the average proportional deviation from independence across the entire table. Values exceeding 1.0 (or falling below −0.50) are generally considered noteworthy, though these thresholds are empirical rather than based on formal probability distributions.</p>
         ")
       }
       
@@ -1768,19 +1752,19 @@ chisqposthocClass <- R6::R6Class(
         ")
       }
       
-      # PEM / Sakoda D Local
+      # PEM / Sakoda's D local
       if (self$options$pem) {
         html <- paste0(html, "
-    <h3 style='color: #2874A6; margin-top: 1.5em;'>PEM (Percentage of Maximum Deviation from Independence) / Sakoda's D Local</h3>
-    <p>PEM is a local effect size measure that asks: 'what proportion of the maximum possible deviation from independence is present in this specific cell?' The calculation involves three steps: (1) compute the observed deviation from independence (<i>n</i><sub><i>ij</i></sub> − <i>e</i><sub><i>ij</i></sub>); (2) determine the maximum possible deviation given the fixed marginal totals (the smaller of the row and column totals, minus the expected count); (3) express the observed deviation as a percentage of the maximum: PEM = [(<i>n</i><sub><i>ij</i></sub> − <i>e</i><sub><i>ij</i></sub>) / (<i>n</i><sub>max</sub> − <i>e</i><sub><i>ij</i></sub>)] × 100.</p>
+    <h3 style='color: #2874A6; margin-top: 1.5em;'>PEM (Percentage of Maximum Deviation from Independence) / Sakoda's D local</h3>
+    <p>PEM is a local effect size measure that asks: 'what proportion of the maximum possible deviation from independence is present in this specific cell?' The calculation involves three steps: (1) compute the observed deviation from independence (<i>n</i><sub><i>ij</i></sub> − <i>e</i><sub><i>ij</i></sub>); (2) determine the maximum possible deviation given the fixed marginal totals: for attraction (<i>n</i><sub><i>ij</i></sub> &gt; <i>e</i><sub><i>ij</i></sub>) this is <i>n</i><sub>max</sub> − <i>e</i><sub><i>ij</i></sub>, where <i>n</i><sub>max</sub> is the smaller of the row and column totals; for repulsion it is <i>e</i><sub><i>ij</i></sub> − <i>n</i><sub>min</sub>, where <i>n</i><sub>min</sub> = max(0, <i>n</i><sub><i>i</i>+</sub> + <i>n</i><sub>+<i>j</i></sub> − <i>N</i>) is the smallest count the cell can hold given its margins; (3) express the observed deviation as a percentage of the applicable maximum, for example PEM = [(<i>n</i><sub><i>ij</i></sub> − <i>e</i><sub><i>ij</i></sub>) / (<i>n</i><sub>max</sub> − <i>e</i><sub><i>ij</i></sub>)] × 100 for attraction.</p>
     
-    <p><strong>Equivalence to Sakoda's D Local:</strong> PEM, introduced by Cibois (1993), is mathematically identical to Sakoda's local (i.e., cell-level) index of dissimilarity (D<sub>ij</sub>), developed independently by Sakoda (1981). The only difference is presentation: Sakoda expresses the value as a proportion (−1 to +1), whilst Cibois multiplies by 100 to express it as a percentage (−100% to +100%). Both measures quantify how far each cell deviates from independence relative to its maximum possible deviation given the marginal constraints.</p>
+    <p><strong>Equivalence to Sakoda's D local:</strong> PEM, introduced by Cibois (1993), is mathematically identical to Sakoda's local (i.e., cell-level) index of dissimilarity (D<sub>ij</sub>), developed independently by Sakoda (1981). The only difference is presentation: Sakoda expresses the value as a proportion (−1 to +1), whilst Cibois multiplies by 100 to express it as a percentage (−100% to +100%). Both measures quantify how far each cell deviates from independence relative to its maximum possible deviation given the marginal constraints.</p>
     
-    <p>PEM values range from −100% to +100%. Positive values indicate <strong>attraction</strong> (the cell contains more observations than expected), with +100% meaning the cell has reached its maximum possible count given the marginals. Negative values indicate <strong>repulsion</strong> (fewer observations than expected), with −100% meaning the cell is completely empty despite having a positive expected count. A value of 0% indicates perfect independence for that cell.</p>
+    <p>PEM values range from −100% to +100%. Positive values indicate <strong>attraction</strong> (the cell contains more observations than expected), with +100% meaning the cell has reached its maximum possible count given the marginals. Negative values indicate <strong>repulsion</strong> (fewer observations than expected), with −100% meaning the cell holds the smallest count its margins allow (an empty cell when <i>n</i><sub><i>i</i>+</sub> + <i>n</i><sub>+<i>j</i></sub> ≤ <i>N</i>). A value of 0% indicates perfect independence for that cell.</p>
     
-    <p><strong>Effect size interpretation and colour coding:</strong> Unlike global association measures (such as Cramér's V) where Cohen's thresholds (0.1, 0.3, 0.5) can be applied or scaled, no established statistical convention exists for interpreting cell-level effect sizes. The colour coding and thresholds used in this module to flag noteworthy PEM values are based on the empirical guidelines proposed by Cibois (1993): values exceeding ±50% are considered indicative of substantively meaningful attraction or repulsion. These thresholds are practical rules of thumb derived from applied experience rather than statistical theory, and users should exercise judgement based on their specific research context.</p>
+    <p><strong>Effect size interpretation and colour coding:</strong> Unlike global association measures (such as Cramér's V) where Cohen's thresholds (0.1, 0.3, 0.5) can be applied or scaled, no established statistical convention exists for interpreting cell-level effect sizes. The thresholds given in the table note follow the empirical guidelines proposed by Cibois (1993): values of about 10% are worth noting and values beyond ±50% indicate substantively strong attraction or repulsion. These thresholds are practical rules of thumb derived from applied experience rather than statistical theory, and users should exercise judgement based on their specific research context. The red colouring in the PEM table is a different thing: it flags the cells whose bootstrap confidence interval excludes zero (statistical significance), whatever the size of the PEM, so a small PEM such as 12% can be coloured when its interval is [3%, 20%] and a large one left uncoloured when its interval reaches zero.</p>
     
-    <p><strong>Statistical inference:</strong> PEM / Sakoda D Local is accompanied by bootstrap confidence intervals, allowing formal hypothesis testing. If the confidence interval excludes zero, the cell's deviation from independence is statistically significant. This combination of interpretable effect size and inferential capacity makes PEM particularly powerful for identifying and quantifying specific patterns of association through significant strong attraction and repulsion.</p>
+    <p><strong>Statistical inference:</strong> PEM / Sakoda's D local is accompanied by bootstrap confidence intervals, allowing formal hypothesis testing. If the confidence interval excludes zero, the cell's deviation from independence is statistically significant. This combination of interpretable effect size and inferential capacity makes PEM particularly powerful for identifying and quantifying specific patterns of association through significant strong attraction and repulsion.</p>
     
     <p><strong>Forest plot visualisation:</strong> The optional PEM forest plot provides a ranked visual summary of all cell-level associations. Each cell is represented by a point (the PEM estimate) with horizontal whiskers showing the bootstrap confidence interval (Lefèvre & Champely 2009). Statistically significant associations (confidence interval excludes zero) appear in gold when positive (attraction) and in maroon when negative (repulsion); non-significant associations appear in grey. The vertical line at zero represents independence. This visualisation allows rapid identification of the strongest and most reliable patterns of attraction and repulsion, sorted by effect magnitude. Note that because PEM is bounded (−100% to +100%) and its sampling distribution is typically skewed, bootstrap confidence intervals are often asymmetric around the point estimate; this is expected behaviour consistent with the percentile bootstrap method (Efron & Tibshirani 1993; Lefèvre & Champely 2009).</p>
   ")

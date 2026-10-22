@@ -4,126 +4,136 @@ jus: '3.0'
 stage: 0
 compilerMode: tame
 children:
-  - type: LayoutBox
-    margin: large
+  - type: CollapseBox
+    label: Analysis Settings
+    collapsed: false
+    stretchFactor: 1
     children:
-      - type: Label
-        label: Analysis Type
+      - type: LayoutBox
+        margin: large
         children:
-          - type: RadioButton
-            name: analysisType_apriori
-            optionName: analysisType
-            optionPart: apriori
-          - type: RadioButton
-            name: analysisType_posthoc
-            optionName: analysisType
-            optionPart: posthoc
-          - type: RadioButton
-            name: analysisType_sensitivity
-            optionName: analysisType
-            optionPart: sensitivity
-  - type: LayoutBox
-    margin: large
-    children:
-      - type: Label
-        label: Table Dimensions
+          - type: Label
+            label: Analysis Type
+            children:
+              - type: RadioButton
+                name: analysisType_apriori
+                optionName: analysisType
+                optionPart: apriori
+              - type: RadioButton
+                name: analysisType_posthoc
+                optionName: analysisType
+                optionPart: posthoc
+              - type: RadioButton
+                name: analysisType_sensitivity
+                optionName: analysisType
+                optionPart: sensitivity
+      - type: LayoutBox
+        margin: large
         children:
-          - type: LayoutBox
-            stretchFactor: 1
+          - type: Label
+            label: Table Dimensions
             children:
               - type: LayoutBox
-                cell:
-                  column: 0
-                  row: 0
+                stretchFactor: 1
                 children:
-                  - type: TextBox
-                    name: nRows
-                    format: number
-              - type: LayoutBox
-                cell:
-                  column: 1
-                  row: 0
-                children:
-                  - type: TextBox
-                    name: nCols
-                    format: number
-  - type: LayoutBox
-    margin: large
-    children:
-      - type: Label
-        label: Effect Size Specification
+                  - type: LayoutBox
+                    cell:
+                      column: 0
+                      row: 0
+                    children:
+                      - type: TextBox
+                        name: nRows
+                        format: number
+                  - type: LayoutBox
+                    cell:
+                      column: 1
+                      row: 0
+                    children:
+                      - type: TextBox
+                        name: nCols
+                        format: number
+      - type: LayoutBox
+        margin: large
         children:
-          - type: LayoutBox
-            stretchFactor: 1
+          - type: Label
+            label: Effect Size Specification
             children:
               - type: LayoutBox
-                cell:
-                  column: 0
-                  row: 0
+                stretchFactor: 1
                 children:
-                  - type: RadioButton
-                    name: esType_w
-                    optionName: esType
-                    optionPart: w
+                  - type: LayoutBox
+                    cell:
+                      column: 0
+                      row: 0
+                    children:
+                      - type: RadioButton
+                        name: esType_w
+                        optionName: esType
+                        optionPart: w
+                  - type: LayoutBox
+                    cell:
+                      column: 0
+                      row: 1
+                    children:
+                      - type: RadioButton
+                        name: esType_v
+                        optionName: esType
+                        optionPart: v
+                  - type: LayoutBox
+                    cell:
+                      column: 0
+                      row: 2
+                    children:
+                      - type: RadioButton
+                        name: esType_conventional
+                        optionName: esType
+                        optionPart: conventional
               - type: LayoutBox
-                cell:
-                  column: 0
-                  row: 1
+                margin: normal
                 children:
-                  - type: RadioButton
-                    name: esType_v
-                    optionName: esType
-                    optionPart: v
+                  - type: TextBox
+                    name: effectSize
+                    format: number
+                    enable: (esType:w || esType:v)
               - type: LayoutBox
-                cell:
-                  column: 0
-                  row: 2
+                margin: normal
                 children:
-                  - type: RadioButton
-                    name: esType_conventional
-                    optionName: esType
-                    optionPart: conventional
-          - type: LayoutBox
-            margin: normal
+                  - type: ComboBox
+                    name: esConventional
+                    enable: (esType:conventional)
+      - type: LayoutBox
+        margin: large
+        children:
+          - type: Label
+            label: Statistical Parameters
             children:
               - type: TextBox
-                name: effectSize
+                name: alpha
                 format: number
-                enable: (esType:w || esType:v)
-          - type: LayoutBox
-            margin: normal
+              - type: TextBox
+                name: power
+                format: number
+                enable: (analysisType:apriori || analysisType:sensitivity)
+              - type: TextBox
+                name: n
+                format: number
+                enable: (analysisType:posthoc || analysisType:sensitivity)
+  - type: CollapseBox
+    label: Display Options
+    collapsed: true
+    stretchFactor: 1
+    children:
+      - type: LayoutBox
+        margin: large
+        children:
+          - type: Label
+            label: Display Options
             children:
-              - type: ComboBox
-                name: esConventional
-                enable: (esType:conventional)
-  - type: LayoutBox
-    margin: large
-    children:
-      - type: Label
-        label: Statistical Parameters
-        children:
-          - type: TextBox
-            name: alpha
-            format: number
-          - type: TextBox
-            name: power
-            format: number
-            enable: (analysisType:apriori || analysisType:sensitivity)
-          - type: TextBox
-            name: n
-            format: number
-            enable: (analysisType:posthoc || analysisType:sensitivity)
-  - type: LayoutBox
-    margin: large
-    children:
-      - type: Label
-        label: Display Options
-        children:
-          - type: CheckBox
-            name: showRefTable
-          - type: CheckBox
-            name: showPowerCurve
-          - type: CheckBox
-            name: showESCurve
-          - type: CheckBox
-            name: showMethodInfo
+              - type: CheckBox
+                name: showRefTable
+              - type: CheckBox
+                name: showPowerCurve
+              - type: CheckBox
+                name: showESCurve
+              - type: CheckBox
+                name: showMethodInfo

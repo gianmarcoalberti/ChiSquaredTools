@@ -3,3 +3,5 @@
 ^.*\.jmo$
 ^build$
 ^\.Rhistory$
+^tools$
+^_to_delete$

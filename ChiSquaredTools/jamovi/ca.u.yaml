@@ -26,7 +26,7 @@ children:
             maxItemCount: 1
             isTarget: true
       - type: TargetLayoutBox
-        label: Counts (optional, for frequency data)
+        label: Counts (optional)
         children:
           - type: VariablesListBox
             name: counts
@@ -73,11 +73,15 @@ children:
                     name: showSymmetricCoords
                   - type: CheckBox
                     name: showCellContrib
+                    children:
+                      - type: TextBox
+                        name: residualThreshold
+                        format: number
       # ------------------------------------------------------------------------
       # Contribution Biplot Tables
       # ------------------------------------------------------------------------
       - type: Label
-        label: Contribution Biplot
+        label: "Contribution biplot: dimension interpretation"
         children:
           - type: LayoutBox
             margin: small
@@ -103,6 +107,10 @@ children:
                 children:
                   - type: CheckBox
                     name: showCorrelations
+                    children:
+                      - type: TextBox
+                        name: qualityThreshold
+                        format: number
                   - type: CheckBox
                     name: showInterpretation
                   - type: CheckBox
@@ -133,37 +141,6 @@ children:
                 children:
                   - type: CheckBox
                     name: showSeriatedTable
-
-  # ============================================================================
-  # FILTERING OPTIONS
-  # ============================================================================
-  - type: CollapseBox
-    label: Filtering Options
-    collapsed: true
-    stretchFactor: 1
-    children:
-      - type: LayoutBox
-        margin: small
-        stretchFactor: 1
-        children:
-          - type: LayoutBox
-            cell:
-              column: 0
-              row: 0
-            stretchFactor: 1
-            children:
-              - type: TextBox
-                name: qualityThreshold
-                format: number
-          - type: LayoutBox
-            cell:
-              column: 1
-              row: 0
-            stretchFactor: 1
-            children:
-              - type: TextBox
-                name: residualThreshold
-                format: number
 
   # ============================================================================
   # ANALYSIS SETTINGS - Vertically stacked to avoid overlap
@@ -358,6 +335,7 @@ children:
         children:
           - type: ComboBox
             name: clusterMethod
+            enable: (showSRDTable || contribShowClusters || symmetricShowClusters)
       - type: LayoutBox
         margin: small
         stretchFactor: 1
@@ -405,7 +383,7 @@ children:
                     name: showAttrEliminationPlot
                     enable: (showAttrElimination)
       - type: Label
-        label: Reduced-Data CA
+        label: Plot with Attribute Assessment
         children:
           - type: CheckBox
             name: showReducedCAPlot
@@ -451,24 +429,7 @@ children:
   # DIAGNOSTICS
   # ============================================================================
   - type: CollapseBox
-    label: Diagnostics
-    collapsed: true
-    stretchFactor: 1
-    children:
-      - type: CheckBox
-        name: showScreePlot
-      - type: LayoutBox
-        margin: small
-        stretchFactor: 1
-        children:
-          - type: CheckBox
-            name: showOverdispersionPlot
-
-  # ============================================================================
-  # METHOD INFORMATION
-  # ============================================================================
-  - type: CollapseBox
-    label: Method Information
+    label: Display Options
     collapsed: true
     stretchFactor: 1
     children:
@@ -476,5 +437,12 @@ children:
         margin: small
         stretchFactor: 1
         children:
+          - type: Label
+            label: Diagnostic plots
+            children:
+              - type: CheckBox
+                name: showScreePlot
+              - type: CheckBox
+                name: showOverdispersionPlot
           - type: CheckBox
             name: showMethodInfo

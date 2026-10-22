@@ -195,6 +195,25 @@
 }
 
 # ---------------------------------------------------------------------------
+# .ctThemeColours(): the text colour and plot background of the jamovi plot
+# theme, for plots that use theme_void() (no axes) but must still follow the
+# light/dark theme for their text and background.
+# ---------------------------------------------------------------------------
+.ctThemeColours <- function(ggtheme) {
+    th <- NULL
+    if (inherits(ggtheme, "theme")) {
+        th <- ggtheme
+    } else if (is.list(ggtheme)) {
+        for (el in ggtheme) if (inherits(el, "theme")) { th <- el; break }
+    }
+    txt <- if (!is.null(th) && inherits(th$text, "element_text") && !is.null(th$text$colour))
+        th$text$colour else "#333333"
+    bg <- if (!is.null(th) && inherits(th$plot.background, "element_rect") && !is.null(th$plot.background$fill))
+        th$plot.background$fill else "white"
+    list(text = txt, background = bg)
+}
+
+# ---------------------------------------------------------------------------
 # .ctFrameRect(): a panel border drawn in the same colour and width as the
 # axis lines of the jamovi plot theme, so that all four sides of a plot
 # look alike (used together with axis.line = element_blank()).

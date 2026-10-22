@@ -549,7 +549,7 @@ caResults <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class(
                 options=options,
                 name="summaryTable",
                 title="Summary",
-                rows=1,
+                rows=0,
                 refs=list(
                     "beh2012",
                     "beh2014",
@@ -562,6 +562,10 @@ caResults <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class(
                     "distanceMetric",
                     "residualType"),
                 columns=list(
+                    list(
+                        `name`="test", 
+                        `title`="Test", 
+                        `type`="text"),
                     list(
                         `name`="statistic", 
                         `title`="Statistic", 
@@ -694,7 +698,7 @@ caResults <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class(
             self$add(jmvcore::Table$new(
                 options=options,
                 name="qualityContribTable",
-                title="Quality & Contributions",
+                title="Quality and Contributions",
                 refs="greenacre2017",
                 visible="(showQualityContrib)",
                 clearWith=list(
@@ -717,7 +721,9 @@ caResults <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class(
                 options=options,
                 name="dimDefTable",
                 title="Dimension Definition",
-                refs="greenacre2017",
+                refs=list(
+                    "greenacre2013",
+                    "greenacre2017"),
                 visible="(showDimDef)",
                 clearWith=list(
                     "rows",
@@ -760,7 +766,9 @@ caResults <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class(
                 options=options,
                 name="dimSummaryTable",
                 title="Dimension Summary",
-                refs="greenacre2017",
+                refs=list(
+                    "greenacre2013",
+                    "greenacre2017"),
                 visible="(showDimSummary)",
                 clearWith=list(
                     "rows",
@@ -792,7 +800,9 @@ caResults <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class(
                 options=options,
                 name="correlTable",
                 title="Correlations with Dimensions",
-                refs="greenacre2017",
+                refs=list(
+                    "greenacre2013",
+                    "greenacre2017"),
                 visible="(showCorrelations)",
                 clearWith=list(
                     "rows",
@@ -808,7 +818,9 @@ caResults <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class(
                 options=options,
                 name="interpTable",
                 title="Interpretation Summary",
-                refs="greenacre2017",
+                refs=list(
+                    "greenacre2013",
+                    "greenacre2017"),
                 visible="(showInterpretation)",
                 clearWith=list(
                     "rows",
@@ -835,7 +847,9 @@ caResults <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class(
                 options=options,
                 name="profilesTable",
                 title="Profiles",
-                refs="greenacre2017",
+                refs=list(
+                    "greenacre2013",
+                    "greenacre2017"),
                 visible="(showProfiles)",
                 clearWith=list(
                     "rows",
@@ -1047,7 +1061,9 @@ caResults <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class(
                 width=650,
                 height=550,
                 renderFun=".plotContribBiplot",
-                refs="greenacre2017",
+                refs=list(
+                    "greenacre2013",
+                    "greenacre2017"),
                 visible="(showContribPlot)",
                 clearWith=list(
                     "rows",
@@ -1102,7 +1118,7 @@ caResults <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class(
             self$add(jmvcore::Image$new(
                 options=options,
                 name="reducedCAPlot",
-                title="Reduced-Data CA Plot",
+                title="CA Plot with Attribute Assessment",
                 width=650,
                 height=550,
                 renderFun=".plotReducedCA",
@@ -1241,19 +1257,24 @@ caBase <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class(
 #'   residuals yield chi-squared distances (classical approach). Freeman-Tukey
 #'   residuals yield Hellinger distances and are more robust to overdispersion
 #'   in sparse tables (Beh, Lombardo & Alberti, 2018).
-#' @param residualType Type of residuals when using Pearson metric.
-#'   Standardised residuals are classical (O-E)/√E. Adjusted standardised
-#'   residuals account for marginal constraints, providing more accurate
-#'   significance testing. This option is ignored when Freeman-Tukey metric is
-#'   selected.
+#' @param residualType Type of residuals when using the Pearson metric.
+#'   Standardised residuals are the classical (O-E)/√E. Adjusted standardised
+#'   residuals divide these by √((1-p_i.)(1-p_.j)), so that each has unit
+#'   variance under independence; this changes the map (categories with small
+#'   margins are stretched) and the cell-level highlighting. The Pearson
+#'   chi-squared test and Malinvaud's test are always taken from the Pearson
+#'   decomposition; the adjusted statistic itself is tested by Monte Carlo and
+#'   reported in a second row of the Summary table (Beh & Lombardo, 2014). This
+#'   option is ignored when the Freeman-Tukey metric is selected.
 #' @param nAxes Number of CA dimensions to extract (default 2). A table can
 #'   have at most min(rows, columns) − 1 dimensions; larger requests are capped.
 #' @param dim1 Which dimension to display on the horizontal axis.
 #' @param dim2 Which dimension to display on the vertical axis.
 #' @param showSymmetricPlot Display the classic symmetric CA scatterplot with
 #'   row and column categories in principal coordinates.
-#' @param symmetricShowClusters Display convex hulls around clusters of
-#'   interpreted categories on the symmetric plot.
+#' @param symmetricShowClusters Display convex hulls around clusters of the
+#'   categories chosen under Cluster target (rows, columns or both) on the
+#'   symmetric plot.
 #' @param symmetricClusterTarget Which categories to cluster on the symmetric
 #'   plot. 'Both' will show separate cluster hulls for row and column
 #'   categories.
@@ -1261,10 +1282,10 @@ caBase <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class(
 #'   displayed plane (sum of contributions to the two displayed dimensions).
 #'   Larger points indicate categories that contribute more to defining the
 #'   plane.
-#' @param symmetricShowQuality Adjust point transparency by quality of
-#'   representation (cos²) on the displayed plane. Fully opaque points are
-#'   well-represented; faded points have low quality and should be interpreted
-#'   cautiously.
+#' @param symmetricShowQuality Colour the points by their quality of
+#'   representation (cos²) on the displayed plane, using a colour gradient from
+#'   low to high quality. Points of low quality are poorly represented by the
+#'   plane and should be interpreted cautiously.
 #' @param symmetricShowPoints Which categories to display on the symmetric
 #'   plot. 'Rows only' hides column points and labels; 'Columns only' hides row
 #'   points and labels. Useful for reducing clutter in crowded plots.
@@ -1292,7 +1313,9 @@ caBase <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class(
 #'   representation.
 #' @param hideWeakContrib Hide labels for plane-defining categories
 #'   contributing below average.
-#' @param showScreePlot Display a scree plot showing inertia by dimension.
+#' @param showScreePlot Display a scree plot showing the percentage of inertia
+#'   of every dimension of the table (not only the extracted ones) and the
+#'   cumulative percentage.
 #' @param equalScale Use equal scaling on both axes.
 #' @param dotSize Size of points in the plots.
 #' @param labelSize Size of category labels.
@@ -1312,13 +1335,15 @@ caBase <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class(
 #' @param showAttrEliminationPlot Display the M² trajectory during backward
 #'   elimination, with automatic elbow detection marking where further removals
 #'   begin to substantially distort the row configuration.
-#' @param showReducedCAPlot Display a symmetric CA plot using only the
-#'   attributes retained after elbow-based selection. Allows visual comparison
-#'   with the full-data CA plot.
-#' @param reducedPlotAttrDisplay What the reduced-data CA plot shows. 'Full
-#'   data, low-influence faded' draws the full-data CA with the low-influence
-#'   attributes (those removed up to the elbow) faded; 'Reduced data only'
-#'   re-runs CA without them.
+#' @param showReducedCAPlot Display a symmetric CA plot in which the
+#'   low-influence attributes (those removed up to the suggested elbow) are
+#'   either faded in the full-data solution (default) or left out, with CA
+#'   re-run on the remaining attributes. Allows visual comparison with the
+#'   full-data CA plot.
+#' @param reducedPlotAttrDisplay What the plot with attribute assessment
+#'   shows. 'Full data, low-influence faded' draws the full-data CA with the
+#'   low-influence attributes (those removed up to the suggested elbow) faded;
+#'   'Reduced data only' re-runs CA without them.
 #' @param showOverdispersionPlot Display a diagnostic plot for overdispersion
 #'   (Beh, Lombardo & Alberti,  2018). If points cluster to the left side of the
 #'   plot rather than  scattering randomly, overdispersion is present and

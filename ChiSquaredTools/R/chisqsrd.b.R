@@ -181,7 +181,7 @@ chisqsrdClass <- R6::R6Class(
       
       # Store original statistics
       orig_N <- sum(orig_matrix)
-      orig_chi <- suppressWarnings(stats::chisq.test(orig_matrix)$statistic)
+      orig_chi <- suppressWarnings(stats::chisq.test(orig_matrix, correct = FALSE)$statistic)
       orig_nRows <- nrow(orig_matrix)
       orig_nCols <- ncol(orig_matrix)
       orig_df <- (orig_nRows - 1) * (orig_nCols - 1)
@@ -239,7 +239,7 @@ chisqsrdClass <- R6::R6Class(
       
       pruned_N <- sum(working_matrix)
       pruned_chi <- if (nrow(working_matrix) > 1 && ncol(working_matrix) > 1) {
-        chi_result <- suppressWarnings(stats::chisq.test(working_matrix)$statistic)
+        chi_result <- suppressWarnings(stats::chisq.test(working_matrix, correct = FALSE)$statistic)
         if (is.na(chi_result) || is.nan(chi_result)) NA else chi_result
       } else {
         NA
@@ -347,7 +347,7 @@ chisqsrdClass <- R6::R6Class(
       # Final statistics
       final_N <- sum(final_matrix)
       final_chi <- if (nrow(final_matrix) > 1 && ncol(final_matrix) > 1) {
-        chi_result <- suppressWarnings(stats::chisq.test(final_matrix)$statistic)
+        chi_result <- suppressWarnings(stats::chisq.test(final_matrix, correct = FALSE)$statistic)
         if (is.na(chi_result) || is.nan(chi_result)) NA else chi_result
       } else {
         NA
@@ -604,7 +604,7 @@ chisqsrdClass <- R6::R6Class(
             weightedDist = best_weighted_dist,
             df = best_df,
             pValue = best_p_value,
-            decision = "Stopped (p < α)",
+            decision = "Stopped (p \u2264 \u03b1)",
             stringsAsFactors = FALSE
           ))
           

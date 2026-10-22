@@ -23,7 +23,7 @@ items:
     - name: summaryTable
       title: Summary
       type: Table
-      rows: 1
+      rows: 0
       refs: 
       - beh2012
       - beh2014
@@ -36,6 +36,9 @@ items:
         - distanceMetric
         - residualType
       columns:
+        - name: test
+          title: Test
+          type: text
         - name: statistic
           title: Statistic
           type: number
@@ -162,7 +165,7 @@ items:
     # QUALITY & CONTRIBUTIONS TABLE
     # ==========================================================================
     - name: qualityContribTable
-      title: Quality & Contributions
+      title: Quality and Contributions
       type: Table
       refs: greenacre2017
       visible: (showQualityContrib)
@@ -187,7 +190,9 @@ items:
     - name: dimDefTable
       title: Dimension Definition
       type: Table
-      refs: greenacre2017
+      refs:
+        - greenacre2013
+        - greenacre2017
       visible: (showDimDef)
       clearWith:
         - rows
@@ -227,7 +232,9 @@ items:
     - name: dimSummaryTable
       title: Dimension Summary
       type: Table
-      refs: greenacre2017
+      refs:
+        - greenacre2013
+        - greenacre2017
       visible: (showDimSummary)
       clearWith:
         - rows
@@ -258,7 +265,9 @@ items:
     - name: correlTable
       title: Correlations with Dimensions
       type: Table
-      refs: greenacre2017
+      refs:
+        - greenacre2013
+        - greenacre2017
       visible: (showCorrelations)
       clearWith:
         - rows
@@ -277,7 +286,9 @@ items:
     - name: interpTable
       title: Interpretation Summary
       type: Table
-      refs: greenacre2017
+      refs:
+        - greenacre2013
+        - greenacre2017
       visible: (showInterpretation)
       clearWith:
         - rows
@@ -304,7 +315,9 @@ items:
     - name: profilesTable
       title: Profiles
       type: Table
-      refs: greenacre2017
+      refs:
+        - greenacre2013
+        - greenacre2017
       visible: (showProfiles)
       clearWith:
         - rows
@@ -533,7 +546,9 @@ items:
       width: 650
       height: 550
       renderFun: .plotContribBiplot
-      refs: greenacre2017
+      refs:
+        - greenacre2013
+        - greenacre2017
       visible: (showContribPlot)
       clearWith:
         - rows
@@ -590,7 +605,7 @@ items:
         - residualType
 
     - name: reducedCAPlot
-      title: Reduced-Data CA Plot
+      title: CA Plot with Attribute Assessment
       type: Image
       width: 650
       height: 550

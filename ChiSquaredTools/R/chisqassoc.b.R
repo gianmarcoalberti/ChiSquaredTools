@@ -5,6 +5,7 @@ chisqassocClass <- R6::R6Class(
     "chisqassocClass",
     inherit = chisqassocBase,
     private = list(
+        .bootDropped = 0L,   # resampled tables left out of the bootstrap (reported in the note)
         
         .init = function() {
             
@@ -203,7 +204,7 @@ chisqassocClass <- R6::R6Class(
             
             # --- Set up sakodaLocalTable structure (if enabled) ---
             sakodaTab <- self$results$sakodaLocalTable
-            sakodaTab$setTitle(paste0("Sakoda's D (Local) / PEM: ", rowVar, " × ", colVar))
+            sakodaTab$setTitle(paste0("Sakoda's D local (PEM): ", rowVar, " × ", colVar))
             
             sakodaTab$addColumn(
                 name = 'rowname',
@@ -707,31 +708,28 @@ chisqassocClass <- R6::R6Class(
             dimnames(D_ij) <- dimnames(N_matrix)
             row_names <- rownames(D_ij)
             
-            # Populate rows with color coding using setRow (structure already created in .init)
+            # Numeric values into number columns; cells beyond Cibois's thresholds
+            # (|D| >= 0.5) are marked red with jamovi's own Cell.NEGATIVE (theme-safe)
+            # and carry a footnote naming the direction (jamovi offers one marker
+            # colour, so attraction and repulsion are told apart by the sign and the note)
             for (i in 1:I) {
                 row_values <- list(rowname = row_names[i])
+                for (j in 1:J) row_values[[paste0("col", j)]] <- D_ij[i, j]
+                table$setRow(rowKey = i, values = row_values)
                 for (j in 1:J) {
                     value <- D_ij[i, j]
-                    formatted_value <- sprintf("%.3f", value)
-                    
-                    # Color code: red for strong positive (>=0.5), blue for strong negative (<=-0.5)
-                    if (value >= 0.5) {
-                        formatted_value <- paste0("<span style='display: block; text-align: center; color: red;'>", formatted_value, "</span>")
-                    } else if (value <= -0.5) {
-                        formatted_value <- paste0("<span style='display: block; text-align: center; color: blue;'>", formatted_value, "</span>")
-                    } else {
-                        formatted_value <- paste0("<span style='display: block; text-align: center;'>", formatted_value, "</span>")
+                    if (!is.na(value) && abs(value) >= 0.5) {
+                        table$addFormat(rowKey = i, col = paste0("col", j), format = jmvcore::Cell.NEGATIVE)
+                        table$addFootnote(rowKey = i, col = paste0("col", j),
+                                          if (value > 0) "Exceptional attraction (D \u2265 0.5)" else "Exceptional repulsion (D \u2264 \u22120.5)")
                     }
-                    
-                    row_values[[paste0("col", j)]] <- formatted_value
                 }
-                table$setRow(rowKey = i, values = row_values)
             }
             
             # Add table note
             self$results$sakodaLocalTable$setNote(
                 key = "interpretation",
-                note = "−1 (maximum repulsion) through 0 (independence) to +1 (maximum attraction). Empirical thresholds: exceptional attraction (≥0.5); exceptional repulsion (≤−0.5). Thresholds based on Cibois's (1993) thresholds for PEM (≥50%). For confidence intervals, see the Post-hoc Analysis facility. (Sakoda 1981; Cibois 1993)"
+                note = "−1 (maximum repulsion) through 0 (independence) to +1 (maximum attraction). Empirical thresholds: exceptional attraction (≥0.5); exceptional repulsion (≤−0.5), both marked in red with a footnote giving the direction. Thresholds based on Cibois's (1993) thresholds for PEM (≥50%). For confidence intervals, see the Post-Hoc Analysis facility. (Sakoda 1981; Cibois 1993)"
             )
         },
         
@@ -802,7 +800,6 @@ chisqassocClass <- R6::R6Class(
                         valueNcp = phi_ncp,
                         lowerCI = phi_lower,
                         upperCI = phi_upper,
-                        pvalue = '',
                         effectSize = effect
                     ))
                     rows_populated <- TRUE
@@ -812,10 +809,11 @@ chisqassocClass <- R6::R6Class(
             # PHI SIGNED - WITH CI (Smithson method with sign applied)
             if (self$options$phiSigned) {
                 if (is_2x2) {
-                    a <- contingency_table[1, 1]
-                    b <- contingency_table[1, 2]
-                    c <- contingency_table[2, 1]
-                    d <- contingency_table[2, 2]
+                    ct_ref <- private$.refOrdered2x2(contingency_table)
+                    a <- ct_ref[1, 1]
+                    b <- ct_ref[1, 2]
+                    c <- ct_ref[2, 1]
+                    d <- ct_ref[2, 2]
                     
                     cross_product <- (a * d) - (b * c)
                     phi_unsigned <- sqrt(chisq_obs / n)
@@ -844,9 +842,9 @@ chisqassocClass <- R6::R6Class(
                         valueNcp = phi_signed_ncp,
                         lowerCI = phi_lower,
                         upperCI = phi_upper,
-                        pvalue = '',
                         effectSize = effect
                     ))
+                    table$addFootnote(rowKey = 'phiSigned', col = 'value', private$.signNote2x2(contingency_table))
                     rows_populated <- TRUE
                 }
             }
@@ -869,7 +867,6 @@ chisqassocClass <- R6::R6Class(
                         value = phi_corr,
                         lowerCI = boot_ci$lower,
                         upperCI = boot_ci$upper,
-                        pvalue = '',
                         effectSize = effect
                     ))
                     rows_populated <- TRUE
@@ -879,17 +876,15 @@ chisqassocClass <- R6::R6Class(
             # COLE'S C7 (2x2 only) - NO CI
             if (self$options$coleC7) {
                 if (is_2x2) {
-                    cole_val <- private$.coleC7(contingency_table)
+                    cole_val <- private$.coleC7(private$.refOrdered2x2(contingency_table))
                     effect <- private$.interpretMarginFreeEffect(cole_val, "cole_c7")
                     
                     table$setRow(rowKey = 'coleC7', values = list(
                         measure = "Cole's C7",
                         value = cole_val,
-                        lowerCI = '',
-                        upperCI = '',
-                        pvalue = '',
                         effectSize = effect
                     ))
+                    table$addFootnote(rowKey = 'coleC7', col = 'value', private$.signNote2x2(contingency_table))
                     rows_populated <- TRUE
                 }
             }
@@ -897,17 +892,15 @@ chisqassocClass <- R6::R6Class(
             # ZYSNO'S PHI* (2x2 only) - NO CI
             if (self$options$zysnoPhi) {
                 if (is_2x2) {
-                    zysno_val <- private$.zysnoPhi(contingency_table)
+                    zysno_val <- private$.zysnoPhi(private$.refOrdered2x2(contingency_table))
                     effect <- private$.interpretMarginFreeEffect(zysno_val, "zysno_phi")
                     
                     table$setRow(rowKey = 'zysnoPhi', values = list(
                         measure = "Zysno's φ*",
                         value = zysno_val,
-                        lowerCI = '',
-                        upperCI = '',
-                        pvalue = '',
                         effectSize = effect
                     ))
+                    table$addFootnote(rowKey = 'zysnoPhi', col = 'value', private$.signNote2x2(contingency_table))
                     rows_populated <- TRUE
                 }
             }
@@ -933,7 +926,6 @@ chisqassocClass <- R6::R6Class(
                     valueNcp = C_ncp,
                     lowerCI = C_lower,
                     upperCI = C_upper,
-                    pvalue = '',
                     effectSize = effect
                 ))
                 rows_populated <- TRUE
@@ -958,7 +950,6 @@ chisqassocClass <- R6::R6Class(
                     value = C_adj,
                     lowerCI = boot_ci$lower,
                     upperCI = boot_ci$upper,
-                    pvalue = '',
                     effectSize = effect
                 ))
                 rows_populated <- TRUE
@@ -993,7 +984,6 @@ chisqassocClass <- R6::R6Class(
                         value = C_corr,
                         lowerCI = boot_ci_lower,
                         upperCI = boot_ci_upper,
-                        pvalue = '',
                         effectSize = effect
                     ))
                     rows_populated <- TRUE
@@ -1001,9 +991,6 @@ chisqassocClass <- R6::R6Class(
                     table$setRow(rowKey = 'cCorrected', values = list(
                         measure = "C corrected",
                         value = NaN,
-                        lowerCI = '',
-                        upperCI = '',
-                        pvalue = '',
                         effectSize = ''
                     ))
                 }
@@ -1029,7 +1016,6 @@ chisqassocClass <- R6::R6Class(
                     valueNcp = V_ncp,
                     lowerCI = V_lower,
                     upperCI = V_upper,
-                    pvalue = '',
                     effectSize = effect
                 ))
                 rows_populated <- TRUE
@@ -1054,7 +1040,6 @@ chisqassocClass <- R6::R6Class(
                         value = V_corr,
                         lowerCI = boot_ci$lower,
                         upperCI = boot_ci$upper,
-                        pvalue = '',
                         effectSize = effect
                     ))
                     rows_populated <- TRUE
@@ -1062,9 +1047,6 @@ chisqassocClass <- R6::R6Class(
                     table$setRow(rowKey = 'vCorrected', values = list(
                         measure = "Cramér's V corrected",
                         value = NaN,
-                        lowerCI = '',
-                        upperCI = '',
-                        pvalue = '',
                         effectSize = ''
                     ))
                 }
@@ -1086,9 +1068,6 @@ chisqassocClass <- R6::R6Class(
                     table$setRow(rowKey = 'vStandardised', values = list(
                         measure = "Cramér's V standardised",
                         value = V_stand,
-                        lowerCI = '',
-                        upperCI = '',
-                        pvalue = '',
                         effectSize = effect
                     ))
                     rows_populated <- TRUE
@@ -1096,9 +1075,6 @@ chisqassocClass <- R6::R6Class(
                     table$setRow(rowKey = 'vStandardised', values = list(
                         measure = "Cramér's V standardised",
                         value = NaN,
-                        lowerCI = '',
-                        upperCI = '',
-                        pvalue = '',
                         effectSize = ''
                     ))
                 }
@@ -1122,9 +1098,6 @@ chisqassocClass <- R6::R6Class(
                 table$setRow(rowKey = 'vBiasCorrected', values = list(
                     measure = "Cramér's V bias-corrected",
                     value = V_bc,
-                    lowerCI = '',
-                    upperCI = '',
-                    pvalue = '',
                     effectSize = effect
                 ))
                 rows_populated <- TRUE
@@ -1149,7 +1122,6 @@ chisqassocClass <- R6::R6Class(
                     valueNcp = w_ncp,
                     lowerCI = w_lower,
                     upperCI = w_upper,
-                    pvalue = '',
                     effectSize = effect
                 ))
                 rows_populated <- TRUE
@@ -1172,7 +1144,6 @@ chisqassocClass <- R6::R6Class(
                     value = W_val,
                     lowerCI = W_lower,
                     upperCI = W_upper,
-                    pvalue = '',
                     effectSize = effect
                 ))
                 rows_populated <- TRUE
@@ -1198,7 +1169,6 @@ chisqassocClass <- R6::R6Class(
                         value = W_corr,
                         lowerCI = boot_ci$lower,
                         upperCI = boot_ci$upper,
-                        pvalue = '',
                         effectSize = effect
                     ))
                     rows_populated <- TRUE
@@ -1206,9 +1176,6 @@ chisqassocClass <- R6::R6Class(
                     table$setRow(rowKey = 'wHatCorrected', values = list(
                         measure = "W-hat corrected",
                         value = NaN,
-                        lowerCI = '',
-                        upperCI = '',
-                        pvalue = '',
                         effectSize = ''
                     ))
                 }
@@ -1227,11 +1194,10 @@ chisqassocClass <- R6::R6Class(
                 effect <- private$.interpretChiSqEffect(D_G, "sakoda", nr, nc, contingency_table, expected, phi_max, c_max, v_max, w_hat_max, sakoda_max)
                 
                 table$setRow(rowKey = 'sakoda', values = list(
-                    measure = "Sakoda's D Global",
+                    measure = "Sakoda's D global",
                     value = D_G,
                     lowerCI = D_lower,
                     upperCI = D_upper,
-                    pvalue = '',
                     effectSize = effect
                 ))
                 rows_populated <- TRUE
@@ -1250,24 +1216,20 @@ chisqassocClass <- R6::R6Class(
                     
                     effect <- private$.interpretChiSqEffect(D_G_corr, "sakoda_corrected", nr, nc, contingency_table, expected, phi_max, c_max, v_max, w_hat_max, sakoda_max)
                     
-                    measure_text <- sprintf("Sakoda's D Global corrected (D<sub>max</sub> = %.3f)", D_G_max)
+                    measure_text <- sprintf("Sakoda's D global corrected (D<sub>max</sub> = %.3f)", D_G_max)
                     
                     table$setRow(rowKey = 'sakodaCorrected', values = list(
                         measure = measure_text,
                         value = D_G_corr,
                         lowerCI = boot_ci$lower,
                         upperCI = boot_ci$upper,
-                        pvalue = '',
                         effectSize = effect
                     ))
                     rows_populated <- TRUE
                 } else {
                     table$setRow(rowKey = 'sakodaCorrected', values = list(
-                        measure = "Sakoda's D Global corrected",
+                        measure = "Sakoda's D global corrected",
                         value = NaN,
-                        lowerCI = '',
-                        upperCI = '',
-                        pvalue = '',
                         effectSize = ''
                     ))
                 }
@@ -1414,11 +1376,10 @@ chisqassocClass <- R6::R6Class(
                 lambda_row_ci <- private$.gkLambdaCI(contingency_table, direction = "row", conf_level)
                 
                 table$setRow(rowKey = 'lambdaRow', values = list(
-                    measure = "Lambda (rows dependent)",
+                    measure = "Lambda (rows dependent on columns)",
                     value = lambda_row,
                     lowerCI = lambda_row_ci[1],
                     upperCI = lambda_row_ci[2],
-                    pvalue = '',
                     effectSize = ''
                 ))
                 
@@ -1427,11 +1388,10 @@ chisqassocClass <- R6::R6Class(
                 lambda_col_ci <- private$.gkLambdaCI(contingency_table, direction = "col", conf_level)
                 
                 table$setRow(rowKey = 'lambdaCol', values = list(
-                    measure = "Lambda (cols dependent)",
+                    measure = "Lambda (columns dependent on rows)",
                     value = lambda_col,
                     lowerCI = lambda_col_ci[1],
                     upperCI = lambda_col_ci[2],
-                    pvalue = '',
                     effectSize = ''
                 ))
                 
@@ -1444,7 +1404,6 @@ chisqassocClass <- R6::R6Class(
                     value = lambda_sym,
                     lowerCI = lambda_sym_ci[1],
                     upperCI = lambda_sym_ci[2],
-                    pvalue = '',
                     effectSize = ''
                 ))
                 rows_populated <- TRUE
@@ -1457,22 +1416,20 @@ chisqassocClass <- R6::R6Class(
                 lambda_row_corr <- private$.gkLambdaCorrected(contingency_table, direction = "col")
                 lambda_row_corr_ci <- private$.gkLambdaCorrectedCI(contingency_table, direction = "col", conf_level)
                 table$setRow(rowKey = 'lambdaCorrRow', values = list(
-                    measure = "Lambda corrected (rows dependent)",
+                    measure = "Lambda corrected (rows dependent on columns)",
                     value = lambda_row_corr,
                     lowerCI = lambda_row_corr_ci[1],
                     upperCI = lambda_row_corr_ci[2],
-                    pvalue = '',
                     effectSize = ''
                 ))
                 
                 lambda_col_corr <- private$.gkLambdaCorrected(contingency_table, direction = "row")
                 lambda_col_corr_ci <- private$.gkLambdaCorrectedCI(contingency_table, direction = "row", conf_level)
                 table$setRow(rowKey = 'lambdaCorrCol', values = list(
-                    measure = "Lambda corrected (cols dependent)",
+                    measure = "Lambda corrected (columns dependent on rows)",
                     value = lambda_col_corr,
                     lowerCI = lambda_col_corr_ci[1],
                     upperCI = lambda_col_corr_ci[2],
-                    pvalue = '',
                     effectSize = ''
                 ))
                 
@@ -1483,7 +1440,6 @@ chisqassocClass <- R6::R6Class(
                     value = lambda_sym_corr,
                     lowerCI = lambda_sym_corr_ci[1],
                     upperCI = lambda_sym_corr_ci[2],
-                    pvalue = '',
                     effectSize = ''
                 ))
                 rows_populated <- TRUE
@@ -1497,11 +1453,10 @@ chisqassocClass <- R6::R6Class(
                 tau_row_ci <- private$.gkTauCI(contingency_table, direction = "col", conf_level)
                 
                 table$setRow(rowKey = 'tauRow', values = list(
-                    measure = "Tau (rows dependent)",
+                    measure = "Tau (rows dependent on columns)",
                     value = tau_row,
                     lowerCI = tau_row_ci[1],
                     upperCI = tau_row_ci[2],
-                    pvalue = '',
                     effectSize = ''
                 ))
                 
@@ -1509,11 +1464,10 @@ chisqassocClass <- R6::R6Class(
                 tau_col_ci <- private$.gkTauCI(contingency_table, direction = "row", conf_level)
                 
                 table$setRow(rowKey = 'tauCol', values = list(
-                    measure = "Tau (cols dependent)",
+                    measure = "Tau (columns dependent on rows)",
                     value = tau_col,
                     lowerCI = tau_col_ci[1],
                     upperCI = tau_col_ci[2],
-                    pvalue = '',
                     effectSize = ''
                 ))
                 rows_populated <- TRUE
@@ -1524,12 +1478,8 @@ chisqassocClass <- R6::R6Class(
                 return()
             }
             
-            # Value (λ̂) exists only for the noncentrality-based measures:
-            # leave it blank (not '.') in the other rows
-            for (key in table$rowKeys) {
-                if (!(key %in% c("phi", "phiSigned", "contingencyC", "cramersV", "cohenW")))
-                    table$setCell(rowKey = key, col = "valueNcp", "")
-            }
+            # Value (λ̂) exists only for the noncentrality-based measures; the
+            # other rows leave that cell unset (jamovi shows it blank)
             
             # Determine which CI types are present
             has_smithson_ci <- self$options$phi || self$options$phiSigned || 
@@ -1571,13 +1521,15 @@ chisqassocClass <- R6::R6Class(
                 
                 if (has_bootstrap_ci) {
                     ci_note_parts <- c(ci_note_parts,
-                                       sprintf("Phi corrected, C adjusted, C corrected, V corrected, W-hat, W-hat corrected, Sakoda's D, and Sakoda's D corrected use the bootstrap percentile method (%d resampled tables; for the corrected measures, W-hat and Sakoda's D, resampled tables in which a row or column is empty are left out); bootstrap intervals estimate precision but cannot test H₀: no association", 
-                                               self$options$bootstrapReps))
+                                       paste0("Phi corrected, C adjusted, C corrected, V corrected, W-hat, W-hat corrected, Sakoda's D, and Sakoda's D corrected use the bootstrap percentile method (Efron & Tibshirani 1993; ",
+                                              self$options$bootstrapReps, " tables resampled from the observed cell proportions",
+                                              if (isTRUE(private$.bootDropped > 0)) paste0(", of which ", private$.bootDropped, " with an empty row or column were left out") else "",
+                                              "); bootstrap intervals estimate precision but cannot test H₀: no association"))
                 }
                 
                 if (has_lambda_ci) {
                     ci_note_parts <- c(ci_note_parts,
-                                       "Lambda uses the asymptotic variance formula (Reynolds 1977); lambda has a degenerate sampling distribution at boundaries—if sample λ = 0 exactly, H₀: λ = 0 cannot be rejected regardless of CI width; if sample λ ≠ 0, population λ is definitively non-zero even when the interval reaches zero")
+                                       "Lambda uses the asymptotic variance formula (Goodman & Kruskal 1963; Reynolds 1977), which is valid only when the population λ is strictly between 0 and 1; the Wald interval is therefore unreliable near 0 and near 1, and a sample λ above 0 does not by itself establish that the population λ is non-zero")
                 }
                 
                 if (has_lambda_corr_ci) {
@@ -1587,7 +1539,7 @@ chisqassocClass <- R6::R6Class(
                 
                 if (has_tau_ci) {
                     ci_note_parts <- c(ci_note_parts,
-                                       "Tau uses the asymptotic variance formula (Bishop et al. 2007: 391–392)")
+                                       "Tau uses a delta-method standard error computed on the same orientation as the estimate (Goodman &amp; Kruskal 1972)")
                 }
                 
                 if (has_margin_free_ci) {
@@ -1625,7 +1577,8 @@ chisqassocClass <- R6::R6Class(
                     for (k in 1:(nc - 1)) {
                         for (l in (k + 1):nc) {
                             sub_table <- contingency_table[c(i, j), c(k, l)]
-                            if (any(sub_table == 0)) sub_table <- sub_table + 0.5
+                            haldane <- any(sub_table == 0)
+                            if (haldane) sub_table <- sub_table + 0.5
                             
                             a <- sub_table[1, 1]; b <- sub_table[1, 2]
                             c <- sub_table[2, 1]; d <- sub_table[2, 2]
@@ -1655,6 +1608,8 @@ chisqassocClass <- R6::R6Class(
                                 pvalue = or_p,
                                 effectSize = effect
                             ))
+                            if (haldane) pairTable$addFootnote(rowKey = rowKey, col = 'comparison',
+                                "A zero cell: 0.5 added to each cell of this 2\u00d72 sub-table (Haldane-Anscombe correction)")
                         }
                     }
                 }
@@ -1676,7 +1631,8 @@ chisqassocClass <- R6::R6Class(
                     for (k in 1:(nc - 1)) {
                         for (l in (k + 1):nc) {
                             sub_table <- contingency_table[c(i, j), c(k, l)]
-                            if (any(sub_table == 0)) sub_table <- sub_table + 0.5
+                            haldane <- any(sub_table == 0)
+                            if (haldane) sub_table <- sub_table + 0.5
                             
                             a <- sub_table[1, 1]; b <- sub_table[1, 2]
                             c <- sub_table[2, 1]; d <- sub_table[2, 2]
@@ -1710,6 +1666,8 @@ chisqassocClass <- R6::R6Class(
                                 pvalue = Q_p,
                                 effectSize = effect
                             ))
+                            if (haldane) pairTable$addFootnote(rowKey = rowKey, col = 'comparison',
+                                "A zero cell: 0.5 added to each cell of this 2\u00d72 sub-table (Haldane-Anscombe correction)")
                         }
                     }
                 }
@@ -1731,7 +1689,8 @@ chisqassocClass <- R6::R6Class(
                     for (k in 1:(nc - 1)) {
                         for (l in (k + 1):nc) {
                             sub_table <- contingency_table[c(i, j), c(k, l)]
-                            if (any(sub_table == 0)) sub_table <- sub_table + 0.5
+                            haldane <- any(sub_table == 0)
+                            if (haldane) sub_table <- sub_table + 0.5
                             
                             a <- sub_table[1, 1]; b <- sub_table[1, 2]
                             c <- sub_table[2, 1]; d <- sub_table[2, 2]
@@ -1765,6 +1724,8 @@ chisqassocClass <- R6::R6Class(
                                 pvalue = Y_p,
                                 effectSize = effect
                             ))
+                            if (haldane) pairTable$addFootnote(rowKey = rowKey, col = 'comparison',
+                                "A zero cell: 0.5 added to each cell of this 2\u00d72 sub-table (Haldane-Anscombe correction)")
                         }
                     }
                 }
@@ -2062,7 +2023,7 @@ chisqassocClass <- R6::R6Class(
                 }
                 
                 table$addRow(rowKey = row_count, values = list(
-                    measure = "Sakoda's D Global",
+                    measure = "Sakoda's D global",
                     small = sprintf("%.3f", small_final),
                     medium = sprintf("%.3f", medium_final),
                     large = sprintf("%.3f", large_final),
@@ -2074,7 +2035,7 @@ chisqassocClass <- R6::R6Class(
             if (self$options$sakodaCorrected) {
                 # Tier 1 only
                 table$addRow(rowKey = row_count, values = list(
-                    measure = "Sakoda's D Global corrected",
+                    measure = "Sakoda's D global corrected",
                     small = sprintf("%.3f", t1_small),
                     medium = sprintf("%.3f", t1_medium),
                     large = sprintf("%.3f", t1_large),
@@ -2096,19 +2057,19 @@ chisqassocClass <- R6::R6Class(
                 
                 table$addRow(rowKey = row_count, values = list(
                     measure = "Yule's Q",
-                    small = "0.330",
+                    small = "0.333",
                     medium = "0.500",
                     large = "0.600",
-                    notes = "OR-based (Ferguson 2009)"
+                    notes = "Q = (OR \u2212 1)/(OR + 1) at OR = 2, 3, 4 (Ferguson 2009)"
                 ))
                 row_count <- row_count + 1
                 
                 table$addRow(rowKey = row_count, values = list(
                     measure = "Yule's Y",
-                    small = "0.171",
+                    small = "0.172",
                     medium = "0.268",
                     large = "0.333",
-                    notes = "OR-based (Ferguson 2009)"
+                    notes = "Y = (\u221aOR \u2212 1)/(\u221aOR + 1) at OR = 2, 3, 4 (Ferguson 2009)"
                 ))
                 row_count <- row_count + 1
             }
@@ -2178,7 +2139,7 @@ chisqassocClass <- R6::R6Class(
                     html <- paste0(html,
                                    "<h3 style='color: #2874A6; margin-top: 1.5em;'>Cole's C7 Coefficient</h3>",
                                    "<p>Cole's C7 is a margin-free measure of association for 2×2 tables that normalises the cross-product difference (ad − bc) by its maximum achievable value given the marginal totals. Unlike standard phi, which can be constrained below unity by unequal marginals, Cole's C7 can always achieve ±1 regardless of marginal distribution. The coefficient reaches +1 when there is perfect positive association (one of b or c equals zero) and −1 when there is perfect negative association (one of a or d equals zero).</p>",
-                                   "<p>The original formulation by Cole (1949) omitted one case; Ratliff (1982) provided the complete set of four formulas covering all possible configurations. For positive association (ad ≥ bc): if c ≤ b, the denominator is (a+b)(b+d); otherwise it is (a+c)(c+d). For negative association (ad < bc): if a ≤ d, the denominator is (a+b)(a+c); otherwise it is (b+d)(c+d).</p>",
+                                   "<p>The original formulation by Cole (1949) omitted one case; Ratliff (1982) provided the complete set of four formulas covering all possible configurations. The denominator is the largest value of |ad − bc| attainable with the observed marginal totals. For positive association (ad > bc): if b ≤ c, the denominator is (a+b)(b+d); otherwise it is (a+c)(c+d); equivalently, (ad − bc) + N·min(b, c). For negative association (ad < bc): if a ≤ d, the denominator is (a+b)(a+c); otherwise it is (b+d)(c+d); equivalently, (bc − ad) + N·min(a, d). (Ratliff's note prints the two positive-association conditions the other way round; his own worked examples require the form given here.)</p>",
                                    "<p>Cole's C7 combines the margin-free property of Yule's Q (always achieving ±1 for complete associations) with greater sensitivity to association strength in non-perfect cases. Unlike Yule's Q, which saturates at ±1 whenever any cell is zero, Cole's C7 only reaches ±1 when the zero is in the 'limiting' cell that constrains maximum association.</p>",
                                    "<p><em>Note:</em> While grouped with chi-squared-based measures due to its conceptual relationship with phi (as a margin-free alternative), Cole's C7 is not technically χ²-based; it normalises the cross-product difference (ad − bc) directly rather than deriving from the chi-squared statistic.</p>")
                     html <- paste0(html, "<p style='font-size: 0.85em; color: #666; margin-top: 8px; margin-bottom: 12px;'><em>References:</em><br/>",
@@ -2190,7 +2151,7 @@ chisqassocClass <- R6::R6Class(
                     html <- paste0(html,
                                    "<h3 style='color: #2874A6; margin-top: 1.5em;'>Zysno's φ* (Phi-Star)</h3>",
                                    "<p>Zysno's φ* is a modification of the phi coefficient designed to reduce its dependence on marginal distributions while retaining sensitivity to association strength. The formula is: φ* = (ad − bc) / (|ad − bc| + N × e), where e is the 'error term' representing the smaller element of the weaker diagonal (min(b,c) for positive associations, min(a,d) for negative associations).</p>",
-                                   "<p>Like Cole's C7 (to which it is related but not identical), Zysno's φ* can always achieve ±1 regardless of marginal distribution, making it directly comparable across tables with different marginal configurations. It reaches +1 when min(b,c) = 0 with positive association, and −1 when min(a,d) = 0 with negative association.</p>",
+                                   "<p>Like Cole's C7, Zysno's φ* can always achieve ±1 regardless of marginal distribution. The two coefficients are in fact the same quantity, (ad − bc) divided by the largest value |ad − bc| can take given the marginal totals, reached by different routes; the module reports both because they are known under both names in different literatures. This makes it directly comparable across tables with different marginal configurations. It reaches +1 when min(b,c) = 0 with positive association, and −1 when min(a,d) = 0 with negative association.</p>",
                                    "<p>Zysno's φ* combines desirable properties from multiple measures: (1) like phi-corrected, its theoretical ceiling is always unity regardless of marginals; (2) like Yule's Q, it can reach ±1 for 'complete' associations where only one off-diagonal cell is zero; (3) unlike Yule's Q, it retains sensitivity to association strength in non-perfect cases rather than saturating at ±1.</p>",
                                    "<p><em>Note:</em> While grouped with chi-squared-based measures due to its conceptual relationship with phi (as a margin-free alternative), Zysno's φ* is not technically χ²-based; it normalises the cross-product difference (ad − bc) directly rather than deriving from the chi-squared statistic. Warrens (2008) showed that a formula using min(n₁u₂, n₂u₁) as denominator is algebraically equivalent to Zysno's φ*; however, this differs from Cole's C7 with Ratliff's correction, which uses conditional formulas based on cell relationships.</p>")
                     html <- paste0(html, "<p style='font-size: 0.85em; color: #666; margin-top: 8px; margin-bottom: 12px;'><em>References:</em><br/>",
@@ -2212,7 +2173,7 @@ chisqassocClass <- R6::R6Class(
                 if (self$options$cAdjusted || self$options$cCorrected) {
                     html <- paste0(html,
                                    "<h3 style='color: #2874A6; margin-top: 1.5em;'>Contingency Coefficient Adjusted and Corrected</h3>",
-                                   "<p>The module computes the adjusted version of C (C adj), which is equal to C divided by √[(k−1)/k], where k is the number of rows or columns, whichever is smaller. The adjustment factor is equal to the maximum value C can attain on the basis of the table's size alone. However, that does not take into account the actual configuration of the marginals. Therefore, a 'proper' correction is based on dividing C by the value it achieves in the chi-squared-maximising table. This maximum-corrected version of C is computed by the module and reported as C corrected as opposed to C adj, which refers to the first above-described adjustment. When interpreting the magnitude of the association, unadjusted C is assessed against Cohen's thresholds adjusted by C's maximum possible value given the table's marginals, while C adj and C corrected are assessed against the standard Cohen's thresholds scaled by the table's size.</p>")
+                                   "<p>The module computes the adjusted version of C (C adj), which is equal to C divided by √[(k−1)/k], where k is the number of rows or columns, whichever is smaller. The adjustment factor is equal to the maximum value C can attain on the basis of the table's size alone. However, that does not take into account the actual configuration of the marginals. Therefore, a 'proper' correction is based on dividing C by the value it achieves in the chi-squared-maximising table. This maximum-corrected version of C is computed by the module and reported as C corrected as opposed to C adj, which refers to the first above-described adjustment. When interpreting the magnitude of the association, unadjusted C is assessed against Cohen's thresholds scaled by the table's size (√df) and then multiplied by C's maximum possible value given the table's marginals, while C adj and C corrected are assessed against the standard Cohen's thresholds scaled by the table's size.</p>")
                     html <- paste0(html, "<p style='font-size: 0.85em; color: #666; margin-top: 8px; margin-bottom: 12px;'><em>References:</em><br/>",
                                    "Sakoda, J. M. (1981). A generalized index of dissimilarity. <em>Demography, 18</em>(2), 245–250.<br/>",
                                    "Blaikie, N. (2003). <em>Analyzing Quantitative Data: From Description to Explanation</em>. SAGE Publications Ltd.<br/>",
@@ -2291,7 +2252,8 @@ chisqassocClass <- R6::R6Class(
                                "In such cases, a maximum-corrected version (W-hat corrected) adjusts the observed W-hat by dividing it by its maximum achievable value, ",
                                "computed from the chi-squared-maximising table. This correction ensures the measure ranges from 0 to 1 under any marginal configuration. ",
                                "Unlike Kvålseth 2018a, for the time being, the calculation of the confidence interval (at the level set in the options) is based on a bootstrap approach, ",
-                               "employing B resampled tables (those in which a row or column is empty are left out), and the percentiles of the bootstrap distribution that delimit the chosen level (the 2.5th and 97.5th for a 95% interval). ",
+                               "employing B tables resampled from the observed cell proportions (multinomial resampling of the N cases; Efron & Tibshirani 1993) and the percentiles of the bootstrap distribution that delimit the chosen level (the 2.5th and 97.5th for a 95% interval). ",
+                               "Resampled tables in which a row or column is empty refer to a smaller table and are left out of every bootstrap interval in this analysis; the Association Measures Summary note reports how many were left out. ",
                                "B is set by default to 999, but can be customised by the user.</p>")
                 html <- paste0(html, "<p style='font-size: 0.85em; color: #666; margin-top: 8px; margin-bottom: 12px;'><em>References:</em><br/>",
                                "Kvålseth, T. O. (2018a). An alternative to Cramér's coefficient of association. <em>Communications in Statistics - Theory and Methods, 47</em>(23), 5662–5674.<br/>",
@@ -2300,10 +2262,10 @@ chisqassocClass <- R6::R6Class(
             
             if (self$options$sakoda || self$options$sakodaCorrected) {
                 html <- paste0(html,
-                               "<h3 style='color: #2874A6; margin-top: 1.5em;'>Sakoda's D Global: Generalized Index of Dissimilarity (D<sub>G</sub>)</h3>",
+                               "<h3 style='color: #2874A6; margin-top: 1.5em;'>Sakoda's D global: Generalised Index of Dissimilarity (D<sub>G</sub>)</h3>",
                                "<p>Sakoda's D<sub>G</sub> is a distance-based measure that generalises the index of dissimilarity to multi-way contingency tables. The index represents the proportion of cases that would need to be redistributed to achieve statistical independence (even distribution) across all cells. The numerator equals half the sum of absolute deviations between observed and expected frequencies, representing the minimum number of cases requiring redistribution. The denominator equals the maximum possible sum of absolute deviations achievable given the marginal totals, calculated as the sum across columns of N×P<sub>j</sub>×(1−P<sub>j</sub>), where P<sub>j</sub> is the column proportion. D<sub>G</sub> ranges from 0 (perfect independence) to a theoretical maximum of 1 (maximum association).</p>",
                                "<p>However, in tables with asymmetric marginal distributions, D<sub>G</sub> cannot achieve its theoretical maximum of unity due to structural constraints imposed by the marginals. ",
-                               "In such cases, a maximum-corrected version (Sakoda's D Global corrected) adjusts the observed D<sub>G</sub> by dividing it by its maximum achievable value, ",
+                               "In such cases, a maximum-corrected version (Sakoda's D global corrected) adjusts the observed D<sub>G</sub> by dividing it by its maximum achievable value, ",
                                "computed from the chi-squared-maximising table. This correction ensures the measure ranges from 0 to 1 under any marginal configuration.</p>",
                                "<p>Unlike chi-squared-based measures—which use squared deviations divided by expected values—D<sub>G</sub> uses absolute deviations. As Sakoda (1981) noted, squaring residuals gives greater weight to extreme cells; additionally, because D<sub>G</sub> does not divide by expected values, it avoids the inflation that can affect Cramér's V when some expected cell counts are very small (Kvålseth 2018a). D<sub>G</sub> also has an intuitive interpretation: it indicates the fraction of cases that must move from cells with excess observations to cells with deficit observations to eliminate association. Bootstrap confidence intervals are computed to quantify uncertainty.</p>")
                 html <- paste0(html, "<p style='font-size: 0.85em; color: #666; margin-top: 8px; margin-bottom: 12px;'><em>References:</em><br/>",
@@ -2317,7 +2279,7 @@ chisqassocClass <- R6::R6Class(
                                "<h3 style='color: #2874A6; margin-top: 1.5em;'>Sakoda's Local D (D<sub>ij</sub>) / PEM</h3>",
                                "<p>Sakoda's Local D (D<sub>ij</sub>) is the cell-level counterpart to D<sub>G</sub>, measuring how far each individual cell deviates from independence relative to its maximum possible deviation. This index is mathematically equivalent to Cibois's PEM (Pourcentage de l'Écart Maximum, or Percentage of Maximum deviation), differing only in presentation: Sakoda expresses the value as a proportion (−1 to +1), whilst Cibois multiplies by 100 to express it as a percentage (−100% to +100%).</p>",
                                "<p>The formula compares the observed deviation (n<sub>ij</sub> − e<sub>ij</sub>) to the maximum possible deviation given the marginal constraints. For cells with more observations than expected (attraction), the maximum is min(N<sub>i+</sub>, N<sub>+j</sub>) − e<sub>ij</sub>. For cells with fewer observations than expected (repulsion), the maximum is e<sub>ij</sub> − max(0, N<sub>i+</sub> + N<sub>+j</sub> − N).</p>",
-                               "<p>A value of +1 indicates the cell has reached its maximum possible count given the marginals (complete attraction). A value of −1 indicates the cell is empty despite having a positive expected count (maximum repulsion). A value of 0 indicates the observed count equals the expected count (independence).</p>",
+                               "<p>A value of +1 indicates the cell has reached its maximum possible count given the marginals (complete attraction). A value of −1 indicates the cell holds the smallest count its margins allow (maximum repulsion; an empty cell when the row and column totals sum to at most <i>N</i>). A value of 0 indicates the observed count equals the expected count (independence).</p>",
                                "<p><strong>Effect size interpretation and colour coding:</strong> Unlike global association measures (such as Cramér's V or Sakoda's D<sub>G</sub>) where Cohen's thresholds can be applied or scaled, no established statistical convention exists for interpreting cell-level effect sizes. The colour coding and thresholds used in this module to flag noteworthy D<sub>ij</sub> values are based on the empirical guidelines proposed by Cibois (1993) for PEM: values exceeding ±0.50 (equivalent to ±50% when expressed as PEM) are considered indicative of substantively meaningful attraction or repulsion. These thresholds are practical rules of thumb derived from applied experience rather than statistical theory, and users should exercise judgement based on their specific research context.</p>",
                                "<p><strong>Note:</strong> The rendered table provides point estimates without confidence intervals. For formal inference with bootstrap confidence intervals, use the <em>PEM</em> option in the <em>Post-hoc Analysis</em> facility of this module.</p>")
                 html <- paste0(html, "<p style='font-size: 0.85em; color: #666; margin-top: 8px; margin-bottom: 12px;'><em>References:</em><br/>",
@@ -2369,9 +2331,10 @@ chisqassocClass <- R6::R6Class(
                     html <- paste0(html,
                                    "<h3 style='color: #2874A6; margin-top: 1.5em;'>Goodman-Kruskal Lambda (λ)</h3>",
                                    "<p>A measure of association based on the idea of Proportional Reduction in Error. It quantifies how much the error in predicting one variable (dependent) is reduced when using knowledge of another variable (independent). The coefficient is asymmetric, meaning that the value of λ can differ depending on which variable is considered independent. λ ranges from 0.0 to 1.0, inclusive. A value of 0.0 indicates that knowing the independent variable does not reduce any error in predicting the dependent variable, whilst a value of 1.0 indicates a complete elimination of prediction errors (100% reduction). For example, a λ of 0.42 can be interpreted as a 42% reduction in prediction errors for the dependent variable when using the independent variable compared to not using it. In square tables, when the counts are concentrated solely along one of the table's diagonals, λ reaches its maximum value of 1.0 for both variables, regardless of which is considered independent.</p>",
-                                   "<p><strong>Confidence interval around Lambda:</strong> The confidence interval uses the asymptotic variance formula (Reynolds 1977: 50, equation 2.32) and, since Lambda ranges from 0 to 1, its limits are truncated to that range. The variance formula assumes multinomial sampling. Lambda has a degenerate sampling distribution at its boundaries: if the population λ = 0, the sample λ will always equal exactly 0; if the population λ = 1, the sample λ will always equal exactly 1. <em>Inference rules:</em> (1) If sample λ = 0 exactly, we cannot reject H₀: λ = 0, regardless of confidence interval width. (2) If sample λ differs from 0 (even by a tiny amount), we can definitively rule out that the population λ equals exactly zero—however, a confidence interval reaching zero indicates that the population λ might be very close to (but not equal to) zero. A CI that includes zero does not mean 'no association' in the usual sense; rather, it indicates the population λ is definitely not exactly zero but could be negligibly small.</p>")
+                                   "<p><strong>Confidence interval around Lambda:</strong> The confidence interval is a Wald interval using the asymptotic variance of λ under multinomial sampling (Goodman & Kruskal 1963; Reynolds 1977: 50, equation 2.32); since λ ranges from 0 to 1, its limits are truncated to that range. Goodman and Kruskal derived this variance for the case 0 &lt; λ &lt; 1, and the normal approximation breaks down near the boundaries: a population λ of 0 does not force the sample λ to be 0 (with sparse modal cells a sample λ above 0 is common even under independence), and when the sample λ is exactly 0 the interval collapses. The interval should therefore be read as a measure of precision for a λ clearly inside (0, 1), not as a test of H₀: λ = 0; an interval reaching 0 means that the data are compatible with a negligible population λ, and a sample λ above 0 does not on its own show that the population λ is non-zero. The delta-method interval reported for Lambda corrected is subject to the same boundary limitation (Kvålseth 2018b).</p>")
                     html <- paste0(html, "<p style='font-size: 0.85em; color: #666; margin-top: 8px; margin-bottom: 12px;'><em>References:</em><br/>",
                                    "Goodman, L. A., & Kruskal, W. H. (1954). Measures of association for cross classifications. <em>Journal of the American Statistical Association, 49</em>(268), 732–764.<br/>",
+                                   "Goodman, L. A., & Kruskal, W. H. (1963). Measures of association for cross classifications III: Approximate sampling theory. <em>Journal of the American Statistical Association, 58</em>(302), 310–364.<br/>",
                                    "Goodman, L. A., & Kruskal, W. H. (1972). Measures of association for cross classifications, IV: Simplification of asymptotic variances. <em>Journal of the American Statistical Association, 67</em>(338), 415–421.<br/>",
                                    "Reynolds, H. T. (1977). <em>The Analysis of Cross-Classifications</em>. The Free Press.<br/>",
                                    "Goodman, L. A., & Kruskal, W. H. (1979). <em>Measures of Association for Cross Classifications</em>. Springer-Verlag.<br/>",
@@ -2393,9 +2356,10 @@ chisqassocClass <- R6::R6Class(
                 if (self$options$gkTau) {
                     html <- paste0(html,
                                    "<h3 style='color: #2874A6; margin-top: 1.5em;'>Goodman-Kruskal Tau (τ)</h3>",
-                                   "<p>Goodman-Kruskal Tau is a PRE measure based on variance rather than mode prediction error. Unlike Lambda, which focuses on the modal category, Tau considers the entire distribution of the dependent variable and measures the proportional reduction in variance. It is more sensitive to the full distribution shape than λ. The coefficient is asymmetric, meaning separate values are computed depending on which variable is treated as dependent. Tau ranges from 0.0 (no reduction in prediction error) to 1.0 (perfect prediction). Its confidence interval uses the asymptotic variance formula (Bishop et al. 2007: 391–392), with the limits truncated to [0, 1].</p>")
+                                   "<p>Goodman-Kruskal Tau is a PRE measure based on variance rather than mode prediction error. Unlike Lambda, which focuses on the modal category, Tau considers the entire distribution of the dependent variable and measures the proportional reduction in variance. It is more sensitive to the full distribution shape than λ. The coefficient is asymmetric, meaning separate values are computed depending on which variable is treated as dependent. Tau ranges from 0.0 (no reduction in prediction error) to 1.0 (perfect prediction). Its confidence interval is a Wald interval with a delta-method standard error under multinomial sampling (Goodman &amp; Kruskal 1972), computed on the same orientation as the estimate, with the limits truncated to [0, 1].</p>")
                     html <- paste0(html, "<p style='font-size: 0.85em; color: #666; margin-top: 8px; margin-bottom: 12px;'><em>References:</em><br/>",
                                    "Goodman, L. A., & Kruskal, W. H. (1954). Measures of association for cross classifications. <em>Journal of the American Statistical Association, 49</em>(268), 732–764.<br/>",
+                                   "Goodman, L. A., & Kruskal, W. H. (1963). Measures of association for cross classifications III: Approximate sampling theory. <em>Journal of the American Statistical Association, 58</em>(302), 310–364.<br/>",
                                    "Goodman, L. A., & Kruskal, W. H. (1972). Measures of association for cross classifications, IV: Simplification of asymptotic variances. <em>Journal of the American Statistical Association, 67</em>(338), 415–421.<br/>",
                                    "Reynolds, H. T. (1977). <em>The Analysis of Cross-Classifications</em>. The Free Press.<br/>",
                                    "Goodman, L. A., & Kruskal, W. H. (1979). <em>Measures of Association for Cross Classifications</em>. Springer-Verlag.<br/>",
@@ -2428,7 +2392,7 @@ chisqassocClass <- R6::R6Class(
                 html <- paste0(html,
                                "<h2 style='color: #2874A6; margin-top: 1.5em; font-size: 1.15em;'>Effect Size Interpretation</h2>",
                                "<p>The verbal articulation of effect size is based on Cohen (1988), with an enhanced approach (building on Olivier & Bell 2013) to account for the maximum achievable values of certain measures. Cohen's base thresholds (0.1, 0.3, 0.5) are adjusted using a two-tier system:</p>",
-                               "<p><strong>Tier 1 – Table-Size Scaling (Cohen 1988):</strong> For tables larger than 2×2, base thresholds are divided by √[min(nr, nc) − 1]. This applies to all measures except Cohen's w. The scaling formulae are: small effect = 0.100 / √df; medium effect = 0.300 / √df; large effect = 0.500 / √df, where df corresponds to the table's minimum dimension minus 1.</p>",
+                               "<p><strong>Tier 1 – Table-Size Scaling (Cohen 1988):</strong> For tables larger than 2×2, base thresholds are divided by √[min(nr, nc) − 1]. This applies to the chi-squared-based and distance-based measures except Cohen's w; the signed 2×2 measures (Cole's C7, Zysno's φ*) and the margin-free measures have their own fixed cut-offs, described below. The scaling formulae are: small effect = 0.100 / √df; medium effect = 0.300 / √df; large effect = 0.500 / √df, where df corresponds to the table's minimum dimension minus 1.</p>",
                                "<p><strong>Tier 2 – Maximum-Value Adjustment (Olivier & Bell 2013):</strong> For uncorrected measures only, the table-size-scaled thresholds are then multiplied by the coefficient's maximum achievable value (Phi max, C max, V max, W-hat max, or Sakoda D<sub>G</sub> max). This compensates for marginal constraints that prevent these measures from reaching 1.0.</p>",
                                "<p><strong>Implementation by measure type:</strong> Uncorrected measures (Phi, Phi signed, C, Cramér's V, W-hat, Sakoda's D<sub>G</sub>) receive both Tier 1 scaling and Tier 2 adjustment. Corrected measures (Phi corrected, C adj, C corrected, V corrected, V standardised, bias-corrected V, W-hat corrected, Sakoda's D<sub>G</sub> corrected) receive Tier 1 scaling only. Cohen's w uses fixed thresholds (0.1, 0.3, 0.5) regardless of table size. Cole's C7 and Zysno's φ* also use Cohen's fixed thresholds (0.1, 0.3, 0.5) as they are margin-free measures with a guaranteed range of −1 to +1, making their values directly interpretable without scaling.</p>",
                                "<p>For margin-free measures (Yule's Q, Yule's Y, Odds Ratios), effect size thresholds are based on Ferguson (2009), who provides guidelines for Odds Ratios. Since Q and Y are monotonic transformations of the Odds Ratio, their thresholds are derived by applying the respective transformation functions to Ferguson's OR thresholds.</p>")
@@ -2461,6 +2425,7 @@ chisqassocClass <- R6::R6Class(
             boot_tables <- vector("list", B)
             boot_max_chisq <- numeric(B)
             boot_chisq_obs <- numeric(B)
+            keep <- logical(B)
             
             for (b in 1:B) {
                 # Resample from multinomial distribution
@@ -2472,6 +2437,13 @@ chisqassocClass <- R6::R6Class(
                 # Compute observed chi-squared for this bootstrap sample
                 boot_row_totals <- rowSums(boot_table)
                 boot_col_totals <- colSums(boot_table)
+                
+                # A resampled table with an empty row or column has fewer
+                # categories than the observed one (its maximum chi-squared and
+                # its corrected measures refer to a different table), so it is
+                # left out; the number left out is reported in the table note
+                keep[b] <- all(boot_row_totals > 0) && all(boot_col_totals > 0)
+                if (!keep[b]) next
                 boot_expected <- outer(boot_row_totals, boot_col_totals) / n
                 
                 # Handle zero expected values
@@ -2484,13 +2456,15 @@ chisqassocClass <- R6::R6Class(
                 boot_max_chisq[b] <- max_result$max_chisq
             }
             
+            private$.bootDropped <- sum(!keep)
             return(list(
-                tables = boot_tables,
-                chisq_obs = boot_chisq_obs,
-                max_chisq = boot_max_chisq,
+                tables = boot_tables[keep],
+                chisq_obs = boot_chisq_obs[keep],
+                max_chisq = boot_max_chisq[keep],
                 n = n,
                 nr = nr,
-                nc = nc
+                nc = nc,
+                n_dropped = sum(!keep)
             ))
         },
         
@@ -2719,25 +2693,24 @@ chisqassocClass <- R6::R6Class(
             a <- x[1, 1]; b <- x[1, 2]; c <- x[2, 1]; d <- x[2, 2]
             
             diff <- a*d - b*c
+            N <- a + b + c + d
             
-            # Perfect association cases
-            if(diff > 0 && (b == 0 || c == 0)) return(1.0)
-            if(diff < 0 && (a == 0 || d == 0)) return(-1.0)
             if(diff == 0) return(0.0)
             
-            # Apply Ratliff's formulas
-            if(diff >= 0) {
-                if(c <= b) {
-                    denom <- (a + b) * (b + d)
-                } else {
-                    denom <- (a + c) * (c + d)
-                }
+            # C7 = (ad - bc) / max|ad - bc| attainable with the observed margins.
+            # Moving mass along the main diagonal until the smaller off-diagonal
+            # cell (b or c) is empty raises ad - bc by N * min(b, c); moving it the
+            # other way until the smaller diagonal cell (a or d) is empty lowers
+            # it by N * min(a, d). These are the four Cole/Ratliff denominators:
+            # positive association, b <= c: (a+b)(b+d); c <= b: (a+c)(c+d);
+            # negative association, a <= d: (a+b)(a+c); d <= a: (b+d)(c+d).
+            # Note that Ratliff (1982) prints the positive-association conditions
+            # the other way round; his own worked examples (Case 1 and Case 2,
+            # both C7 = 1.00) require the conditions used here.
+            if(diff > 0) {
+                denom <- diff + N * min(b, c)
             } else {
-                if(a <= d) {
-                    denom <- (a + b) * (a + c)
-                } else {
-                    denom <- (b + d) * (c + d)
-                }
+                denom <- -diff + N * min(a, d)
             }
             
             return(diff / denom)
@@ -3042,6 +3015,32 @@ chisqassocClass <- R6::R6Class(
             return(c(max(0, lower), min(1, upper)))
         },
         
+        # 2x2 table reordered so that the reference row and column categories
+        # (options rowRef / colRef, defaulting to the first levels) occupy cell
+        # (1, 1). Every signed 2x2 measure (signed phi, Cole's C7, Zysno's
+        # phi*, the odds ratio and Yule's Q and Y) is computed on this table,
+        # so that "positive association" always means that the two reference
+        # categories co-occur more often than expected under independence.
+        .signNote2x2 = function(contingency_table) {
+            ct_ref <- private$.refOrdered2x2(contingency_table)
+            paste0("Sign convention: positive when '", rownames(ct_ref)[1], "' (", self$options$rows,
+                   ") and '", colnames(ct_ref)[1], "' (", self$options$cols,
+                   ") occur together more often than expected under independence; ",
+                   "the categories of interest are set under 'Margin-Free Measures'.")
+        },
+        
+        .refOrdered2x2 = function(contingency_table) {
+            row_levels <- rownames(contingency_table)
+            col_levels <- colnames(contingency_table)
+            rowRef <- self$options$rowRef
+            colRef <- self$options$colRef
+            if (is.null(rowRef) || rowRef == "" || !(rowRef %in% row_levels)) rowRef <- row_levels[1]
+            if (is.null(colRef) || colRef == "" || !(colRef %in% col_levels)) colRef <- col_levels[1]
+            row_order <- c(which(row_levels == rowRef), which(row_levels != rowRef))
+            col_order <- c(which(col_levels == colRef), which(col_levels != colRef))
+            contingency_table[row_order, col_order, drop = FALSE]
+        },
+        
         .gkTau = function(contingency_table, direction = "row") {
             # Note: direction "row" means rows are dependent on columns
             # This matches the reference implementation where tau.row.dep <- calc.tau(t(df))
@@ -3072,56 +3071,47 @@ chisqassocClass <- R6::R6Class(
         },
         
         .gkTauCI = function(contingency_table, direction = "row", conf_level) {
-            # Compute tau standard error using the proper Goodman-Kruskal formula
+            # Wald interval for Goodman-Kruskal tau with a delta-method standard
+            # error (Goodman & Kruskal 1972; Agresti 2013, sect. 16.1).
+            #
+            # The variance is obtained on the SAME orientation as the estimate,
+            # by calling .gkTau() with the same `direction`, so the two can no
+            # longer disagree. The gradient of tau with respect to the cell
+            # proportions is taken numerically (central differences), and the
+            # multinomial sampling variance is
+            #     var(tau) = [ sum_ij p_ij d_ij^2 - (sum_ij p_ij d_ij)^2 ] / N,
+            # the same form used in .gkLambdaCorrectedCI().
+            #
+            # The closed-form expression printed in Bishop, Fienberg & Holland
+            # (1975, eq. 11.3-24) was used in versions up to 1.2.1; it does not
+            # agree with the bootstrap (it reproduces the book's own worked
+            # example, SE = 0.135 for tau = 0.013 at N = 500, where the
+            # bootstrap gives 0.009), so it has been replaced.
             
-            # Helper function matching the uploaded compute_single_se
-            compute_single_se <- function(P) {
-                N <- sum(P)
-                P <- P / N
-                pi_plus <- rowSums(P)
-                p_plus_j <- colSums(P)
-                
-                # Calculate v using equation 11.3-22
-                v <- sum(sapply(1:nrow(P), function(i) {
-                    sapply(1:ncol(P), function(j) {
-                        if(p_plus_j[j] > 0) (P[i,j] - pi_plus[i]*p_plus_j[j])^2/p_plus_j[j] else 0
-                    })
-                }))
-                
-                # Calculate delta (denominator term)
-                delta <- 1 - sum(pi_plus^2)
-                
-                # Initialize variance sum for equation 11.3-24
-                var_sum <- 0
-                
-                # Calculate variance components
-                for(i in 1:nrow(P)) {
-                    for(j in 1:ncol(P)) {
-                        if(P[i,j] == 0) next
-                        term1 <- 2 * v * sum(pi_plus[-i])
-                        term2 <- 2 * sum(P[-i,j]/p_plus_j[j])
-                        term3 <- sum(sapply(1:ncol(P), function(l) {
-                            if(p_plus_j[l] > 0) sum(P[-i,l]/p_plus_j[l]) else 0
-                        }))
-                        bracket_term <- term1 - delta * (term2 - term3)
-                        var_sum <- var_sum + (P[i,j] * bracket_term^2)
-                    }
-                }
-                
-                # Return standard error
-                sqrt(max(var_sum / (N * delta^4), 0))
-            }
+            n <- sum(contingency_table)
+            p <- contingency_table / n
             
-            # Calculate SE based on direction
-            if (direction == "row") {
-                # Row-dependent: use original table
-                tau_se <- compute_single_se(contingency_table)
-            } else {
-                # Column-dependent: use transposed table
-                tau_se <- compute_single_se(t(contingency_table))
-            }
-            
+            # Point estimate on the requested orientation
             tau <- private$.gkTau(contingency_table, direction)
+            
+            # Numerical gradient d tau / d p_ij on the proportion scale.
+            # .gkTau() normalises internally, so the perturbed matrix is
+            # passed as proportions (sum close to 1) and the result is exact
+            # up to the finite-difference step.
+            h <- 1e-6
+            grad <- matrix(0, nrow = nrow(p), ncol = ncol(p))
+            for (i in seq_len(nrow(p))) {
+                for (j in seq_len(ncol(p))) {
+                    p_plus <- p; p_plus[i, j] <- p_plus[i, j] + h
+                    p_minus <- p; p_minus[i, j] <- p_minus[i, j] - h
+                    grad[i, j] <- (private$.gkTau(p_plus, direction) -
+                                   private$.gkTau(p_minus, direction)) / (2 * h)
+                }
+            }
+            
+            # Multinomial delta-method variance
+            var_tau <- (sum(p * grad^2) - sum(p * grad)^2) / n
+            tau_se <- sqrt(max(var_tau, 0))
             
             alpha <- 1 - conf_level
             z <- stats::qnorm(1 - alpha / 2)
@@ -3208,17 +3198,23 @@ chisqassocClass <- R6::R6Class(
         .interpretMarginFreeEffect = function(value, measure_type) {
             # Effect size interpretation for margin-free measures
             if (is.null(value) || is.na(value)) return("")
+            # Cut-offs for Q and Y are derived exactly from Ferguson's (2009)
+            # odds-ratio thresholds 2, 3 and 4, so that an OR, its Q and its Y
+            # always fall in the same class: Q = (OR-1)/(OR+1), Y = (sqrt(OR)-1)/(sqrt(OR)+1)
+            or_cuts <- c(2, 3, 4)
             if (measure_type == "yules_q") {
                 abs_val <- abs(value)
-                if (abs_val < 0.330) return("Negligible")
-                if (abs_val < 0.500) return("Small")
-                if (abs_val < 0.600) return("Medium")
+                cuts <- (or_cuts - 1) / (or_cuts + 1)
+                if (abs_val < cuts[1]) return("Negligible")
+                if (abs_val < cuts[2]) return("Small")
+                if (abs_val < cuts[3]) return("Medium")
                 return("Large")
             } else if (measure_type == "yules_y") {
                 abs_val <- abs(value)
-                if (abs_val < 0.171) return("Negligible")
-                if (abs_val < 0.268) return("Small")
-                if (abs_val < 0.333) return("Medium")
+                cuts <- (sqrt(or_cuts) - 1) / (sqrt(or_cuts) + 1)
+                if (abs_val < cuts[1]) return("Negligible")
+                if (abs_val < cuts[2]) return("Small")
+                if (abs_val < cuts[3]) return("Medium")
                 return("Large")
             } else if (measure_type == "cole_c7" || measure_type == "zysno_phi") {
                 # Cohen's standard thresholds (margin-free measures with range -1 to +1)

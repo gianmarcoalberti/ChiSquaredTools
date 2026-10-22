@@ -305,9 +305,9 @@ chisqclusterBase <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class(
 #' 
 #' The method uses chi-squared distance to identify homogeneous groups of rows 
 #' (or columns) that can be merged without significantly reducing the table's 
-#' association. Merging continues until the chi-squared statistic falls below 
-#' a critical threshold adjusted for multiple comparisons (Greenacre 2017, 
-#' Exhibit A.1, p.254).
+#' association. Merging continues as long as the chi-squared reduction caused 
+#' by each merge stays below a critical value adjusted for multiple 
+#' comparisons (Greenacre 2017, Exhibit A.1, p.254).
 #' 
 #'
 #' @examples
@@ -337,9 +337,9 @@ chisqclusterBase <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class(
 #'   data. If not provided, data are assumed to be in long format (one row per
 #'   case).
 #' @param plotRowDendro TRUE or FALSE (default), display hierarchical
-#'   clustering dendrogram  for table rows with critical value cutoff line
+#'   clustering dendrogram  for table rows with the partition cut-off line
 #' @param plotColDendro TRUE or FALSE (default), display hierarchical
-#'   clustering dendrogram  for table columns with critical value cutoff line
+#'   clustering dendrogram  for table columns with the partition cut-off line
 #' @param showMethodInfo TRUE or FALSE (default), display detailed
 #'   methodological  explanations for the clustering procedure
 #' @param partitionMethod Method for selecting the optimal partition.

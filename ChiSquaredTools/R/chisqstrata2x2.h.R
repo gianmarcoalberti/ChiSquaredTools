@@ -241,7 +241,9 @@ chisqstrata2x2Results <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Cl
                     "rows",
                     "cols",
                     "strata",
-                    "counts"),
+                    "counts",
+                    "rowRef",
+                    "colRef"),
                 columns=list(
                     list(
                         `name`="test", 
@@ -275,7 +277,8 @@ chisqstrata2x2Results <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Cl
                         `superTitle`="95% CI", 
                         `type`="number")),
                 refs=list(
-                    "azen2021")))
+                    "azen2021",
+                    "mantelhaenszel1959")))
             self$add(jmvcore::Table$new(
                 options=options,
                 name="homogeneityTable",
@@ -306,6 +309,7 @@ chisqstrata2x2Results <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Cl
                 refs=list(
                     "azen2021",
                     "breslowday1980",
+                    "tarone1985",
                     "pagano2018",
                     "sheskin2011",
                     "woolf1955")))
@@ -412,8 +416,10 @@ chisqstrata2x2Base <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class
 #' - Woolf's test for homogeneity of odds ratios
 #' - Breslow-Day-Tarone (BDT) test for homogeneity of odds ratios
 #' 
-#' The analysis provides automated interpretation based on four diagnostic
-#' scenarios that consider the joint pattern of test results. When cell counts
+#' The analysis provides automated interpretation based on ten diagnostic
+#' scenarios that consider the joint pattern of the marginal chi-squared test,
+#' the pooled (within-strata) chi-squared test, the CMH test and the BDT test. 
+#' When cell counts
 #' contain zeros, the Haldane-Anscombe correction (adding 0.5 to all cells)
 #' is applied to the stratum-specific and marginal odds ratios and in Woolf's
 #' test; the Mantel-Haenszel common odds ratio uses the observed counts.

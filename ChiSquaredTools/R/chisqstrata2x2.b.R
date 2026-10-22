@@ -883,9 +883,11 @@ chisqstrata2x2Class <- R6::R6Class(
           ciUpper = ci_upper
         ))
         
-        # Highlight OR in red if CI excludes 1 (statistically significant)
+        # Mark an OR whose CI excludes 1 with a footnote (a native marker,
+        # visible in every theme and in APA output)
         if (!is.na(ci_lower) && !is.na(ci_upper) && (ci_lower > 1 || ci_upper < 1)) {
-          table$addFormat(rowKey = k, col = 'or', format = jmvcore::Cell.NEGATIVE)
+          table$addFootnote(rowKey = k, col = 'or', "95% CI excludes 1")
+          table$addFormat(rowKey = k, col = 'or', format = jmvcore::Cell.NEGATIVE)   # red, kept pending the Phase 4 decision
         }
       }
       
@@ -897,18 +899,18 @@ chisqstrata2x2Class <- R6::R6Class(
         ciUpper = marginalORandCI$ci_upper
       ))
       
-      # Highlight marginal OR if significant
       if (!is.na(marginalORandCI$ci_lower) && !is.na(marginalORandCI$ci_upper) && 
           (marginalORandCI$ci_lower > 1 || marginalORandCI$ci_upper < 1)) {
-        table$addFormat(rowKey = 'marginal', col = 'or', format = jmvcore::Cell.NEGATIVE)
+        table$addFootnote(rowKey = 'marginal', col = 'or', "95% CI excludes 1")
+        table$addFormat(rowKey = 'marginal', col = 'or', format = jmvcore::Cell.NEGATIVE)   # red, kept pending the Phase 4 decision
       }
       
       # Update MH common OR row
       table$setRow(rowKey = 'common', values = list(
         stratum = "MH Common OR",
-        or = if (is.na(commonOR)) "" else commonOR,
-        ciLower = if (is.na(commonCI[1])) "" else commonCI[1],
-        ciUpper = if (is.na(commonCI[2])) "" else commonCI[2]
+        or = commonOR,
+        ciLower = commonCI[1],
+        ciUpper = commonCI[2]
       ))
       if (is.na(commonOR)) {
         table$addFootnote(rowKey = 'common', col = 'or', paste0(
@@ -916,9 +918,9 @@ chisqstrata2x2Class <- R6::R6Class(
           "(e.g. the same cell is 0 in every stratum)."))
       }
       
-      # Highlight common OR if significant
       if (!is.na(commonCI[1]) && !is.na(commonCI[2]) && (commonCI[1] > 1 || commonCI[2] < 1)) {
-        table$addFormat(rowKey = 'common', col = 'or', format = jmvcore::Cell.NEGATIVE)
+        table$addFootnote(rowKey = 'common', col = 'or', "95% CI excludes 1")
+        table$addFormat(rowKey = 'common', col = 'or', format = jmvcore::Cell.NEGATIVE)   # red, kept pending the Phase 4 decision
       }
       # Add footnote about CI overlap interpretation
       table$setNote(
@@ -980,9 +982,9 @@ chisqstrata2x2Class <- R6::R6Class(
         statistic = as.numeric(cmhTest$statistic),
         df = as.integer(cmhTest$parameter),
         pvalue = cmhTest$p.value,
-        commonOR = if (is.na(commonOR)) "" else commonOR,
-        commonCILower = if (is.na(commonCI[1])) "" else commonCI[1],
-        commonCIUpper = if (is.na(commonCI[2])) "" else commonCI[2]
+        commonOR = commonOR,
+        commonCILower = commonCI[1],
+        commonCIUpper = commonCI[2]
       ))
       if (is.na(commonOR)) {
         table$addFootnote(rowKey = 1, col = 'commonOR', paste0(
@@ -1036,11 +1038,13 @@ chisqstrata2x2Class <- R6::R6Class(
         table$setRow(rowKey = 2, values = list(
           test = "Breslow-Day-Tarone",
           statistic = NA,
-          df = bdtResult$df,
+          df = NA,
           pvalue = NA
         ))
         table$addFootnote(rowKey = 2, col = 'statistic', 
-                          paste0("Could not compute: ", bdtResult$error))
+                          paste0("Could not compute: ", bdtResult$error,
+                                 ". The test is built around the Mantel-Haenszel common odds ratio, ",
+                                 "which is not finite here (Breslow & Day 1980; Tarone 1985)."))
       } else {
         table$setRow(rowKey = 2, values = list(
           test = "Breslow-Day-Tarone",
@@ -1062,16 +1066,18 @@ chisqstrata2x2Class <- R6::R6Class(
         )
       } else if (mhSig || bdtSig) {
         homogFootnote <- paste0(
-          "At least one test is significant: the odds ratios differ across strata ",
-          "(heterogeneity). ",
+          if (is.na(bdtResult$pvalue)) "The Woolf test is significant" else "At least one test is significant",
+          ": the odds ratios differ across strata (heterogeneity). ",
           "The common (Mantel-Haenszel) odds ratio does not adequately summarise the association; ",
           "examine stratum-specific odds ratios."
         )
       } else {
         homogFootnote <- paste0(
-          "Neither test is significant: no evidence that the odds ratios differ across strata ",
+          if (is.na(bdtResult$pvalue)) "The Woolf test is not significant" else "Neither test is significant",
+          ": no evidence that the odds ratios differ across strata ",
           "(the tests have limited power with few or small strata, so this does not show that ",
-          "they are equal). The common (Mantel-Haenszel) odds ratio can be used as a summary."
+          "they are equal).",
+          if (is.na(bdtResult$pvalue)) "" else " The common (Mantel-Haenszel) odds ratio can be used as a summary."
         )
       }
       table$setNote('homogeneityInterpretation', homogFootnote)
@@ -1090,9 +1096,12 @@ chisqstrata2x2Class <- R6::R6Class(
       # Guard against invalid test results
       # ─────────────────────────────────────────────────────────────────────────
       
+      # Breslow-Day-Tarone is unavailable whenever the common OR is 0 or
+      # infinite (the same off-diagonal cell is empty in every stratum); the
+      # CMH, Woolf and pooled tests are still valid then, so the interpretation
+      # proceeds on those and only the heterogeneity verdict is based on Woolf.
       if (is.null(cmhTest$p.value) || is.na(cmhTest$p.value) ||
-          is.null(mhResult$pvalue) || is.na(mhResult$pvalue) ||
-          is.null(bdtResult$pvalue) || is.na(bdtResult$pvalue)) {
+          is.null(mhResult$pvalue) || is.na(mhResult$pvalue)) {
         
         table <- self$results$interpretationTable
         table$setRow(rowKey = 'condIndep', values = list(
@@ -1115,7 +1124,7 @@ chisqstrata2x2Class <- R6::R6Class(
       pooledSig <- pooledChiSq$pvalue < 0.05
       cmhSig <- cmhTest$p.value < 0.05
       mhSig <- mhResult$pvalue < 0.05
-      bdtSig <- bdtResult$pvalue < 0.05
+      bdtSig <- !is.na(bdtResult$pvalue) && bdtResult$pvalue < 0.05
       heterogeneitySig <- mhSig || bdtSig
       
       # ─────────────────────────────────────────────────────────────────────────
@@ -1134,7 +1143,6 @@ chisqstrata2x2Class <- R6::R6Class(
       # STAGE 1: Conditional dependence text
       # ─────────────────────────────────────────────────────────────────────────
       
-      cmhFailedDueToReversal <- !cmhSig && pooledSig && trueDirectionalReversal
       pairTxt <- paste0("'", rowVar, "' and '", colVar, "'")
       
       # Which test decides conditional dependence: both tests have the same null
@@ -1159,8 +1167,10 @@ chisqstrata2x2Class <- R6::R6Class(
           )
         } else {
           stage1Text <- paste0(
-            "Neither the pooled chi-squared test nor the CMH test is significant: no evidence of an ",
-            "association between ", pairTxt, " within strata of '", strataVar, "'."
+            "Pooled chi-squared test not significant (", pooledPTxt, "): no evidence of an ",
+            "association between ", pairTxt, " within strata of '", strataVar, "'. ",
+            "Because the odds ratios are heterogeneous, the CMH test (", if (cmhSig) "significant" else "not significant",
+            "), which assumes a common odds ratio, is not used for this judgement."
           )
         }
       } else if (cmhSig) {
@@ -1198,10 +1208,14 @@ chisqstrata2x2Class <- R6::R6Class(
       # ─────────────────────────────────────────────────────────────────────────
       
       # Change in the odds ratio when Z is controlled for (marginal vs common OR):
-      # a change above 10% is the usual change-in-estimate signal of confounding
+      # a change above 10% is the usual change-in-estimate signal of confounding.
+      # The comparison is made on the log scale, |log(common / marginal)|, so the
+      # verdict is the same whichever category is used as the reference
+      # (OR 2.00 vs 1.81 and OR 0.50 vs 0.552 are the same 10.5% change); the
+      # percentage reported is exp(|log ratio|) - 1.
       fmtOR <- function(x) if (abs(x) >= 0.01) sprintf("%.2f", x) else format(signif(x, 2))
-      orChange <- if (is.finite(marginalOR) && is.finite(commonOR) && marginalOR > 0)
-        abs(commonOR / marginalOR - 1) else NA
+      orChange <- if (is.finite(marginalOR) && is.finite(commonOR) && marginalOR > 0 && commonOR > 0)
+        exp(abs(log(commonOR / marginalOR))) - 1 else NA
       confounded <- isTRUE(orChange > 0.10)
       changeTxt <- if (is.na(orChange)) "" else paste0(
         " Controlling for '", strataVar, "' changes the odds ratio by ", round(100 * orChange),
@@ -1209,26 +1223,31 @@ chisqstrata2x2Class <- R6::R6Class(
         if (confounded) paste0(", so the marginal odds ratio is partly confounded by '", strataVar, "'.")
         else ", too little to suggest confounding.")
       
+      # All scenarios are decided from conditionalDependence (Stage 1), which
+      # is the pooled test when the odds ratios are heterogeneous and the CMH
+      # test otherwise, so that Stage 3 can never contradict Stage 1.
       if (marginalSig && !conditionalDependence && !heterogeneitySig) {
         scenario <- "Spuriousness"
         recommendation <- paste0(
           "the marginal association is not found once '", strataVar, "' is controlled for, ",
           "which is consistent with '", strataVar, "' confounding it."
         )
-      } else if (marginalSig && !cmhSig && heterogeneitySig && !cmhFailedDueToReversal) {
+      } else if (marginalSig && !conditionalDependence && heterogeneitySig) {
         scenario <- "Effect Modification"
         recommendation <- paste0(
-          "the odds ratios differ across strata, so the CMH test finds no common association",
-          if (pooledSig) ", while the pooled chi-squared test shows an association within strata" else "",
-          "; '", strataVar, "' acts as an effect modifier. Report stratum-specific odds ratios."
+          "the odds ratios differ across strata and the pooled chi-squared test, used in place of the CMH test ",
+          "when the odds ratios are heterogeneous, shows no association within strata: the marginal association ",
+          "is not reproduced once '", strataVar, "' is controlled for, and the stratum odds ratios differ in ",
+          "strength and may point different ways. Report stratum-specific odds ratios."
         )
-      } else if (cmhFailedDueToReversal) {
+      } else if (conditionalDependence && heterogeneitySig && trueDirectionalReversal) {
         scenario <- "Interaction (Directional Reversal)"
         recommendation <- paste0(
           "'", strataVar, "' is an effect modifier and the association reverses direction ",
-          "across strata. Report stratum-specific odds ratios."
+          "across strata, so the common odds ratio describes none of them. ",
+          "Report stratum-specific odds ratios."
         )
-      } else if (marginalSig && cmhSig && !heterogeneitySig) {
+      } else if (marginalSig && conditionalDependence && !heterogeneitySig) {
         if (anyStratumSig) {
           scenario <- if (confounded) "Partial Confounding" else "Replication"
           recommendation <- paste0(
@@ -1244,22 +1263,13 @@ chisqstrata2x2Class <- R6::R6Class(
             private$.commonORPhrase(commonOR)
           )
         }
-      } else if (marginalSig && cmhSig && heterogeneitySig) {
-        if (trueDirectionalReversal) {
-          scenario <- "Interaction (Directional Reversal)"
-          recommendation <- paste0(
-            "'", strataVar, "' is an effect modifier and the association reverses direction ",
-            "across strata, so the common odds ratio describes none of them. ",
-            "Report stratum-specific odds ratios."
-          )
-        } else {
-          scenario <- "Interaction"
-          recommendation <- paste0(
-            "'", strataVar, "' acts as an effect modifier: the strength of the association ",
-            "differs across strata. Report stratum-specific odds ratios."
-          )
-        }
-      } else if (!marginalSig && cmhSig) {
+      } else if (marginalSig && conditionalDependence && heterogeneitySig) {
+        scenario <- "Interaction"
+        recommendation <- paste0(
+          "'", strataVar, "' acts as an effect modifier: the association is present within strata ",
+          "but its strength differs across them. Report stratum-specific odds ratios."
+        )
+      } else if (!marginalSig && conditionalDependence) {
         scenario <- "Suppression"
         if (!heterogeneitySig) {
           recommendation <- paste0(
@@ -1268,8 +1278,8 @@ chisqstrata2x2Class <- R6::R6Class(
           )
         } else {
           recommendation <- paste0(
-            "'", strataVar, "' was masking the association, but the odds ratios differ across ",
-            "strata. Report stratum-specific odds ratios."
+            "'", strataVar, "' was masking the association, which appears only within strata, ",
+            "but the odds ratios differ across strata. Report stratum-specific odds ratios."
           )
         }
       } else if (!marginalSig && !conditionalDependence && !heterogeneitySig) {
@@ -1281,8 +1291,9 @@ chisqstrata2x2Class <- R6::R6Class(
       } else {
         scenario <- "Ambiguous Pattern"
         recommendation <- paste0(
-          "no overall association is detected, but the odds ratios differ across strata. ",
-          "Examine stratum-specific results carefully."
+          "no overall association is detected and the pooled chi-squared test, used in place of the CMH test ",
+          "when the odds ratios are heterogeneous, finds none within strata either, but the odds ratios ",
+          "differ across strata. Examine stratum-specific results carefully."
         )
       }
       
@@ -1417,17 +1428,21 @@ chisqstrata2x2Class <- R6::R6Class(
           and there is no evidence of heterogeneity, but no individual stratum is significant on its own 
           (all confidence intervals include 1). The strata point the same way and the CMH test, which pools 
           them, detects the association that each stratum is too small to detect alone; pooling consistent 
-          strata in this way is what the CMH test is designed to do.</li>
+          strata in this way is what the CMH test is designed to do. When controlling for Z changes the odds 
+          ratio by more than 10% (common versus marginal OR, compared on the log scale), the scenario is labelled 
+          <em>Consistent Weak Association, Partly Confounded</em>: the association is consistent across strata 
+          and Z partly distorts it in the marginal table.</li>
           
-          <li><strong>Effect Modification:</strong> Marginal association is significant, but CMH test is 
-          non-significant with significant heterogeneity (without true directional reversal). 
-          Stratum-specific associations vary in magnitude such that the aggregate effect is nullified. 
-          Z is an <em>effect modifier</em>.</li>
+          <li><strong>Effect Modification:</strong> Marginal association is significant, the odds ratios are 
+          heterogeneous, and the pooled chi-squared test (which replaces the CMH test as the within-stratum 
+          test when the odds ratios are heterogeneous) finds no association within strata: the stratum-specific associations vary (and may point different ways) in such a way that 
+          no within-stratum association is established while the aggregate shows one. Z is an <em>effect modifier</em>.</li>
           
           <li><strong>Replication:</strong> Both marginal and conditional associations are significant, 
           there is no evidence of heterogeneity, at least one stratum individually confirms the association 
           (confidence interval excluding 1), and controlling for Z changes the odds ratio by no more than 10% 
-          (marginal OR compared with the common OR, the usual change-in-estimate criterion). There is no 
+          (marginal OR compared with the common OR on the log scale, so that the verdict does not depend on 
+          which category is the reference; the usual change-in-estimate criterion). There is no 
           evidence that Z is a confounder or an effect modifier.</li>
           
           <li><strong>Partial Confounding:</strong> As for Replication, but controlling for Z changes the 
@@ -1439,26 +1454,26 @@ chisqstrata2x2Class <- R6::R6Class(
           of Z. Z is an <em>effect modifier</em>. When the stratum odds ratios point in opposite directions, 
           the CMH result and the common odds ratio describe none of the strata and should not be interpreted.</li>
           
-          <li><strong>Interaction (Directional Reversal):</strong> The CMH test is non-significant, but 
-          the pooled chi-squared test is significant and stratum-specific odds ratios show genuine 
-          directional reversal (at least one confidence interval entirely above 1 and at least one 
-          entirely below 1). The CMH test fails in this scenario because opposing effects cancel out. 
-          The pooled test correctly identifies conditional dependence. Z is an <em>effect modifier</em> 
-          with qualitative interaction.</li>
+          <li><strong>Interaction (Directional Reversal):</strong> The pooled chi-squared test is significant, 
+          the odds ratios are heterogeneous, and the stratum-specific odds ratios show genuine directional 
+          reversal (at least one confidence interval entirely above 1 and at least one entirely below 1). 
+          The CMH test is not interpreted in this case: opposing effects cancel in it, so a non-significant 
+          result reflects cancellation and a significant one only the dominant strata. The pooled test 
+          identifies conditional dependence. Z is an <em>effect modifier</em> with qualitative interaction.</li>
           
-          <li><strong>Suppression:</strong> No marginal association, but a conditional association 
-          emerges when stratified (significant CMH). Z was masking a real X\u2013Y relationship. 
-          If there is no evidence of heterogeneity, the common odds ratio can be used as a summary; 
-          if the odds ratios are heterogeneous, report stratum-specific odds ratios.</li>
+          <li><strong>Suppression:</strong> No marginal association, but a conditional association emerges when 
+          stratified (significant CMH test, or significant pooled test when the odds ratios are heterogeneous). 
+          Z was masking a real X\u2013Y relationship. If there is no evidence of heterogeneity, the common odds 
+          ratio can be used as a summary; if the odds ratios are heterogeneous, report stratum-specific odds ratios.</li>
           
           <li><strong>No Association:</strong> Neither marginal nor conditional association is significant, 
           and no evidence of heterogeneity. There is no evidence of a relationship between X and Y, 
           regardless of Z.</li>
           
-          <li><strong>Ambiguous Pattern:</strong> No overall association is detected, but odds ratios 
-          are heterogeneous across strata. This may reflect opposing effects that are individually too 
-          weak to detect, insufficient statistical power, or sampling variability. Examine stratum-specific 
-          results carefully and consider the study context.</li>
+          <li><strong>Ambiguous Pattern:</strong> No overall association is detected and none within strata, 
+          but the odds ratios are heterogeneous across strata. This may reflect opposing effects that are 
+          individually too weak to detect, insufficient statistical power, or sampling variability. Examine 
+          stratum-specific results carefully and consider the study context.</li>
         </ol>
         
         <p style='margin-top: 1em;'><strong>Note on Simpson's Paradox:</strong> In the broader literature 
@@ -1481,7 +1496,9 @@ chisqstrata2x2Class <- R6::R6Class(
         applied when needed to the stratum-specific and marginal odds ratios and in Woolf's test 
         (whose inverse-variance weights it enters). The Mantel-Haenszel common odds ratio uses the 
         observed counts; when it is not finite (e.g. the same cell is 0 in every stratum) it is 
-        reported as unavailable.</p>
+        reported as unavailable. In that case the Breslow-Day-Tarone test, which is built around the 
+        common odds ratio, cannot be computed either, and the homogeneity verdict rests on Woolf's test 
+        alone; the CMH test, the pooled test and the interpretation are unaffected.</p>
         ")
       
       html <- paste0(html, "</div>")

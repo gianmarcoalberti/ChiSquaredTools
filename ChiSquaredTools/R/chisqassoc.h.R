@@ -405,8 +405,10 @@ chisqassocResults <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class(
                     "cramer1946",
                     "cureton1959",
                     "davenport1991",
+                    "efron1993",
                     "ferguson2009",
                     "goodman1954",
+                    "goodman1963",
                     "goodman1972",
                     "kendall1961",
                     "kvalseth2018a",
@@ -464,7 +466,7 @@ chisqassocResults <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class(
             self$add(jmvcore::Table$new(
                 options=options,
                 name="sakodaLocalTable",
-                title="Sakoda's D (Local) / PEM",
+                title="Sakoda's D local (PEM)",
                 visible="(sakodaLocal)",
                 clearWith=list(
                     "rows",
@@ -700,7 +702,9 @@ chisqassocBase <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class(
 #' foundation.
 #' 
 #' Provides:
-#' - Chi-squared-based measures (Phi, Cramér's V, Cohen's w, W-hat, etc.)
+#' - Chi-squared-based measures (Phi, Cramér's V, Cohen's w, Contingency 
+#' coefficient C, etc.)
+#' - Distance-based measures (W-hat, Sakoda's D)
 #' - Margin-free measures (Yule's Q, Y, Odds Ratios)
 #' - PRE measures (Goodman-Kruskal Lambda and Tau)
 #' - Confidence intervals where available
@@ -773,12 +777,12 @@ chisqassocBase <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class(
 #'   dissimilarity (D_G), a global measure of association representing the
 #'   proportion of cases needing redistribution to achieve independence.
 #' @param sakodaCorrected TRUE or FALSE (default), compute maximum-corrected
-#'   Sakoda's D Global. Corrects for the maximum achievable value in tables with
+#'   Sakoda's D global. Corrects for the maximum achievable value in tables with
 #'   asymmetric marginals.
 #' @param sakodaLocal TRUE or FALSE (default), Sakoda's cell-level index of
 #'   dissimilarity (D_ij), mathematically equivalent to Cibois's PEM (Percentage
 #'   of Maximum deviation). Displays a table of local association values without
-#'   confidence intervals. For bootstrap CIs, use the Post-hoc Analysis
+#'   confidence intervals. For bootstrap CIs, use the Post-Hoc Analysis
 #'   facility.
 #' @param marginFree TRUE or FALSE (default), compute margin-free measures:
 #'   Odds Ratio,  Yule's Q, and Yule's Y. For 2×2 tables: single values appear

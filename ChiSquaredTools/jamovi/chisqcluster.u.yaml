@@ -31,36 +31,45 @@ children:
             isTarget: true
 
   - type: CollapseBox
-    label: Partition Selection
+    label: Analysis Settings
+    collapsed: false
+    stretchFactor: 1
+    children:
+      - type: LayoutBox
+        margin: large
+        children:
+          - type: Label
+            label: Partition selection
+            children:
+              - type: RadioButton
+                name: partitionMethod_greenacre
+                optionName: partitionMethod
+                optionPart: greenacre
+                label: Critical chi-squared (Greenacre, 2017)
+              - type: RadioButton
+                name: partitionMethod_inertia
+                optionName: partitionMethod
+                optionPart: inertia
+                label: Inertia gain ratio (Husson et al., 2017)
+  - type: CollapseBox
+    label: Plots
     collapsed: true
+    stretchFactor: 1
     children:
-      - type: RadioButton
-        name: partitionMethod_greenacre
-        optionName: partitionMethod
-        optionPart: greenacre
-        label: Critical chi-squared (Greenacre, 2017)
-      - type: RadioButton
-        name: partitionMethod_inertia
-        optionName: partitionMethod
-        optionPart: inertia
-        label: Inertia gain ratio (Husson et al., 2017)
-
-  - type: LayoutBox
-    margin: large
-    children:
-      - type: Label
-        label: Plot Options
+      - type: LayoutBox
+        margin: large
         children:
           - type: CheckBox
             name: plotRowDendro
           - type: CheckBox
             name: plotColDendro
-
-  - type: LayoutBox
-    margin: large
+  - type: CollapseBox
+    label: Display Options
+    collapsed: true
+    stretchFactor: 1
     children:
-      - type: Label
-        label: Display Options
+      - type: LayoutBox
+        margin: large
         children:
           - type: CheckBox
             name: showMethodInfo

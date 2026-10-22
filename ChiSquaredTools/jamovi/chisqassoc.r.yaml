@@ -85,8 +85,10 @@ items:
         - cramer1946
         - cureton1959
         - davenport1991
+        - efron1993
         - ferguson2009
         - goodman1954
+        - goodman1963
         - goodman1972
         - kendall1961
         - kvalseth2018a
@@ -137,7 +139,7 @@ items:
 
     # 4b. SAKODA LOCAL TABLE
     - name: sakodaLocalTable
-      title: Sakoda's D (Local) / PEM
+      title: Sakoda's D local (PEM)
       type: Table
       visible: (sakodaLocal)
       clearWith:

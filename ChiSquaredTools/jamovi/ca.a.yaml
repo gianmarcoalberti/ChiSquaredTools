@@ -171,7 +171,7 @@ options:
           the interpreted variable is shown in principal coordinates.
           
     - name: showQualityContrib
-      title: Quality & contributions
+      title: Quality and contributions
       type: Bool
       default: true
       description: >
@@ -184,7 +184,7 @@ options:
     # FILTERING OPTIONS
     # ==========================================================================
     - name: qualityThreshold
-      title: Minimum quality (cos²) for correlations
+      title: Minimum quality (cos²) shown
       type: Number
       min: 0
       max: 1
@@ -194,7 +194,7 @@ options:
           correlations table. Set to 0 to show all categories.
 
     - name: residualThreshold
-      title: Highlighting threshold for residuals (|z|)
+      title: Highlight |residual| above
       type: Number
       min: 0
       max: 10
@@ -232,10 +232,15 @@ options:
           title: Adjusted standardised
       default: standardised
       description: >
-          Type of residuals when using Pearson metric. Standardised residuals
-          are classical (O-E)/√E. Adjusted standardised residuals account for
-          marginal constraints, providing more accurate significance testing.
-          This option is ignored when Freeman-Tukey metric is selected.
+          Type of residuals when using the Pearson metric. Standardised residuals
+          are the classical (O-E)/√E. Adjusted standardised residuals divide these
+          by √((1-p_i.)(1-p_.j)), so that each has unit variance under independence;
+          this changes the map (categories with small margins are stretched) and the
+          cell-level highlighting. The Pearson chi-squared test and Malinvaud's test
+          are always taken from the Pearson decomposition; the adjusted statistic
+          itself is tested by Monte Carlo and reported in a second row of the
+          Summary table (Beh & Lombardo, 2014). This option is ignored when the Freeman-Tukey
+          metric is selected.
 
     - name: nAxes
       title: Number of axes to extract
@@ -281,8 +286,8 @@ options:
       type: Bool
       default: false
       description: >
-          Display convex hulls around clusters of interpreted categories
-          on the symmetric plot.
+          Display convex hulls around clusters of the categories chosen under
+          Cluster target (rows, columns or both) on the symmetric plot.
           
     - name: symmetricClusterTarget
       title: Cluster target
@@ -329,16 +334,17 @@ options:
           title: Both
       default: none
       description: >
-          Adjust point transparency by quality of representation (cos²) on
-          the displayed plane. Fully opaque points are well-represented;
-          faded points have low quality and should be interpreted cautiously.
+          Colour the points by their quality of representation (cos²) on the
+          displayed plane, using a colour gradient from low to high quality.
+          Points of low quality are poorly represented by the plane and should
+          be interpreted cautiously.
           
     - name: symmetricShowPoints
       title: Points displayed
       type: List
       options:
         - name: both
-          title: Rows and Columns
+          title: Rows and columns
         - name: rows
           title: Rows only
         - name: cols
@@ -432,7 +438,7 @@ options:
           Colour interpreted categories by their quality of representation.
 
     - name: hideWeakContrib
-      title: Hide low contributors
+      title: Hide labels of low contributors
       type: Bool
       default: false
       description: >
@@ -446,7 +452,9 @@ options:
       type: Bool
       default: false
       description: >
-          Display a scree plot showing inertia by dimension.
+          Display a scree plot showing the percentage of inertia of every
+          dimension of the table (not only the extracted ones) and the
+          cumulative percentage.
 
     - name: equalScale
       title: Equal axis scaling
@@ -538,16 +546,18 @@ options:
           to substantially distort the row configuration.
 
     - name: showReducedCAPlot
-      title: Reduced-data plot
+      title: Plot with attribute assessment
       type: Bool
       default: false
       description: >
-          Display a symmetric CA plot using only the attributes retained
-          after elbow-based selection. Allows visual comparison with the
-          full-data CA plot.
+          Display a symmetric CA plot in which the low-influence attributes
+          (those removed up to the suggested elbow) are either faded in the
+          full-data solution (default) or left out, with CA re-run on the
+          remaining attributes. Allows visual comparison with the full-data
+          CA plot.
 
     - name: reducedPlotAttrDisplay
-      title: Reduced-data plot shows
+      title: Attribute assessment plot shows
       type: List
       options:
         - name: fade
@@ -556,10 +566,10 @@ options:
           title: Reduced data only
       default: fade
       description: >
-          What the reduced-data CA plot shows. 'Full data, low-influence
-          faded' draws the full-data CA with the low-influence attributes
-          (those removed up to the elbow) faded; 'Reduced data only'
-          re-runs CA without them.
+          What the plot with attribute assessment shows. 'Full data,
+          low-influence faded' draws the full-data CA with the low-influence
+          attributes (those removed up to the suggested elbow) faded;
+          'Reduced data only' re-runs CA without them.
 
     # ==========================================================================
     # DIAGNOSTICS

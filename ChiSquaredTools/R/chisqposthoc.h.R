@@ -294,7 +294,8 @@ chisqposthocResults <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Clas
                     "stdres"),
                 columns=list(),
                 refs=list(
-                    "agresti2013")))
+                    "agresti2013",
+                    "beasley1995")))
             self$add(jmvcore::Table$new(
                 options=options,
                 name="momcorrstdresTable",
@@ -308,7 +309,8 @@ chisqposthocResults <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Clas
                     "momcorrstdres"),
                 columns=list(),
                 refs=list(
-                    "garciaperez2003")))
+                    "garciaperez2003",
+                    "beasley1995")))
             self$add(jmvcore::Table$new(
                 options=options,
                 name="adjstdresTable",
@@ -322,7 +324,8 @@ chisqposthocResults <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Clas
                     "adjstdres"),
                 columns=list(),
                 refs=list(
-                    "haberman1973")))
+                    "haberman1973",
+                    "beasley1995")))
             self$add(jmvcore::Table$new(
                 options=options,
                 name="queteletTable",
@@ -592,8 +595,7 @@ chisqposthocBase <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class(
 #' - Goodman-Kruskal residuals
 #' - Dependence Evaluator Proportion (DEP)
 #' 
-#' Significant cells are highlighted in the tables.
-#' Significance tables automatically identify attraction/repulsion patterns.
+#' Cells beyond the significance or effect-size thresholds are marked in red.
 #' 
 #'
 #' @examples
@@ -663,9 +665,8 @@ chisqposthocBase <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class(
 #' @param bootstrapReps number of bootstrap replications for PEM confidence
 #'   intervals (default: 999)
 #' @param seed random seed for reproducibility (default: 123)
-#' @param showPemPlot TRUE or FALSE (default: FALSE), display a diverging bar
-#'   chart of PEM values with bootstrap confidence intervals, sorted by
-#'   magnitude
+#' @param showPemPlot TRUE or FALSE (default: FALSE), display a forest plot of
+#'   PEM estimates with bootstrap confidence intervals, sorted by magnitude
 #' @param pemPlotFilter filter which cells to display in the PEM forest plot:
 #'   'all' (default), 'sigOnly', or 'nonsigOnly'
 #' @param showDepPlot TRUE or FALSE (default: FALSE), display a forest plot of

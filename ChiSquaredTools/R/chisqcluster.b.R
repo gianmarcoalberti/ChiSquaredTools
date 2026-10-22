@@ -105,36 +105,41 @@ chisqclusterClass <- R6::R6Class(
       .ctRejectTooFewLevels(contingency_table, rowVar, colVar)
       .ctRejectEmptyMargins(contingency_table, rowVar, colVar)
       
+      # The critical chi-squared method needs a tabulated critical value
+      # (Pearson & Hartley 1972, Table 51: p = min(I-1, J-1) between 2 and 10,
+      # nu = max(I-1, J-1) up to 200). Both dimensions and the method are
+      # known before anything is computed, so an unsupported table is
+      # rejected here with a message, instead of being caught later and
+      # silently turned into empty output.
+      if (self$options$partitionMethod == "greenacre") {
+        I <- nrow(contingency_table); J <- ncol(contingency_table)
+        p_dim <- min(I - 1, J - 1); nu_dim <- max(I - 1, J - 1)
+        if (p_dim < 2 || p_dim > 10 || nu_dim > 200) {
+          jmvcore::reject(paste0(
+            "The critical chi-squared method (Greenacre 2017) is tabulated only for tables with ",
+            "3 to 11 categories on the smaller side and at most 201 on the larger side ",
+            "(Pearson & Hartley 1972, Table 51); this table is ", I, " \u00d7 ", J, ". ",
+            "Choose the inertia gain ratio method (Husson et al. 2017) under 'Partition selection method', ",
+            "which has no size restriction."))
+        }
+      }
+      
       # Always populate the crosstab
       private$.populateCrosstab(contingency_table)
       
-      # Perform clustering analysis - row clustering
-      tryCatch({
-        row_result <- private$.clusterContingency(contingency_table, dim = "row")
-        private$.rowClusterResult <- row_result
-        private$.populateRowResults(row_result)
-        # Save only what the dendrogram draws (needed on export)
-        self$results$rowDendro$setState(private$.dendroState(row_result))
-      }, error = function(e) {
-        self$results$rowClusterTable$setNote('clusterError', 
-                                             paste0("Row clustering is not available: ", e$message), init = FALSE)
-        # Nothing to draw: hide the dendrogram rather than leave it blank
-        self$results$rowDendro$setVisible(FALSE)
-      })
+      # Clustering. No tryCatch here: the expected failure (an untabulated
+      # table size) is rejected above, so any other error is a genuine bug
+      # and should be shown by jamovi rather than swallowed.
+      row_result <- private$.clusterContingency(contingency_table, dim = "row")
+      private$.rowClusterResult <- row_result
+      private$.populateRowResults(row_result)
+      # Save only what the dendrogram draws (needed on export)
+      self$results$rowDendro$setState(private$.dendroState(row_result))
       
-      # Perform clustering analysis - column clustering
-      tryCatch({
-        col_result <- private$.clusterContingency(contingency_table, dim = "col")
-        private$.colClusterResult <- col_result
-        private$.populateColResults(col_result)
-        # Save only what the dendrogram draws (needed on export)
-        self$results$colDendro$setState(private$.dendroState(col_result))
-      }, error = function(e) {
-        self$results$colClusterTable$setNote('clusterError', 
-                                             paste0("Column clustering is not available: ", e$message), init = FALSE)
-        # Nothing to draw: hide the dendrogram rather than leave it blank
-        self$results$colDendro$setVisible(FALSE)
-      })
+      col_result <- private$.clusterContingency(contingency_table, dim = "col")
+      private$.colClusterResult <- col_result
+      private$.populateColResults(col_result)
+      self$results$colDendro$setState(private$.dendroState(col_result))
       
       # Populate method info and references
       private$.populateMethodInfo()
@@ -147,13 +152,16 @@ chisqclusterClass <- R6::R6Class(
       I <- private$.I
       J <- private$.J
       
-      # Fill pre-existing rows using setRow
+      # The crosstab columns are integers: non-integer (weighted) counts are
+      # rounded consistently in the cells and in the totals, and a note says
+      # so; the clustering itself uses the counts as given
+      ct_disp <- round(contingency_table)
       for (i in seq_len(I)) {
         row_values <- list()
         for (j in seq_len(J)) {
-          row_values[[paste0('col', j)]] <- as.integer(contingency_table[i, j])
+          row_values[[paste0('col', j)]] <- as.integer(ct_disp[i, j])
         }
-        row_values[['rowTotal']] <- sum(contingency_table[i, ])
+        row_values[['rowTotal']] <- as.integer(round(sum(contingency_table[i, ])))
         
         crosstab$setRow(rowKey = paste0('row', i), values = row_values)
       }
@@ -161,11 +169,16 @@ chisqclusterClass <- R6::R6Class(
       # Total row
       total_values <- list()
       for (j in seq_len(J)) {
-        total_values[[paste0('col', j)]] <- sum(contingency_table[, j])
+        total_values[[paste0('col', j)]] <- as.integer(round(sum(contingency_table[, j])))
       }
-      total_values[['rowTotal']] <- sum(contingency_table)
+      total_values[['rowTotal']] <- as.integer(round(sum(contingency_table)))
       
       crosstab$setRow(rowKey = 'total', values = total_values)
+      if (any(abs(contingency_table - ct_disp) > 1e-8)) {
+        crosstab$setNote('rounded', "The counts are not whole numbers: they are shown rounded to integers; the clustering uses the counts as given.", init = FALSE)
+      } else {
+        crosstab$setNote('rounded', NULL, init = FALSE)
+      }
     },
     
     .getCriticalChiSquare = function(nrow, ncol) {
@@ -178,101 +191,68 @@ chisqclusterClass <- R6::R6Class(
     # Find optimal partition using inertia gain ratio (Husson et al., 2017)
     # -------------------------------------------------------------------------
     .findOptimalPartitionInertia = function(merge_stats, qmin = 2, qmax = NULL) {
-      # merge_stats has columns: step, items_merged, groups_remaining, 
-      #                          chi_square, reduction, reduction_percent
-      # 
+      # merge_stats has one row per step: row 1 is the initial state (n_items
+      # clusters, reduction 0); row k + 1 is the state after k merges, with
+      # n_items - k clusters, chi_square = chi-squared of the reduced table and
+      # reduction = chi-squared lost by that merge.
+      #
+      # Criterion: the one actually implemented in FactoMineR's HCPC()
+      # (auto.cut.tree): with W(q) the within-cluster inertia of the q-cluster
+      # partition, choose the q in [qmin, qmax] that minimises
+      #     quot(q) = W(q) / W(q - 1),
+      # i.e. the partition whose last split removes the largest share of the
+      # within-cluster inertia. In chi-squared terms, W(q) = chi2_total - chi2(q),
+      # where chi2(q) is the chi-squared of the table reduced to q clusters
+      # (the between-cluster inertia times N); W(1) = chi2_total.
+      # (Husson, Le & Pages describe the criterion in words as the increase in
+      # between-cluster inertia from q - 1 to q clusters being much larger than
+      # from q to q + 1; the printed formula and the HCPC code differ, and the
+      # code is followed here so that the two agree.)
       
-      # At step k, we have (n - k) clusters remaining, where n = total items.
-      # The 'reduction' column gives Δ(q) = chi²_before - chi²_after for each merge.
-      #
-      # Husson criterion: find q that minimises Δ(q) / Δ(q+1)
-      # where q is the number of clusters AFTER the merge.
-      #
-      # In our merge_stats:
-      #   - step 0: n clusters (initial state, reduction = 0)
-      #   - step 1: n-1 clusters (first merge, reduction[2])
-      #   - step k: n-k clusters (reduction[k+1])
-      #
-      # To go from q clusters to q-1 clusters is step (n - q).
-      # Δ(q) = reduction at step (n - q + 1) in 1-indexed R terms.
-      
-      n_items <- nrow(merge_stats)  # This equals n (original number of items)
-      n <- n_items - 1  # Number of merges possible
+      n_items <- nrow(merge_stats)
+      chi_total <- merge_stats$chi_square[1]
       
       if (is.null(qmax)) {
-        qmax <- min(10, n)  # Default maximum clusters to consider
+        qmax <- min(10, n_items - 1)
       }
-      
-      # Ensure sensible bounds
       qmin <- max(2, qmin)
-      qmax <- min(qmax, n)
+      qmax <- min(qmax, n_items - 1)
       
-      
-      if (qmax <= qmin) {
-        # Not enough range to compute ratios; return qmin
+      if (qmax < qmin || n_items < 3 || !is.finite(chi_total) || chi_total <= 0) {
         return(list(
           optimal_clusters = qmin,
-          # step that leaves qmin clusters (n_items items, one merge per step)
           optimal_step = max(0, n_items - qmin),
           ratios = NULL
         ))
       }
       
-      # Compute ratios for each candidate q in [qmin, qmax]
-      # ratio(q) = Δ(q) / Δ(q+1)
-      # where Δ(q) is the inertia gain when going from q to q-1 clusters
+      # chi2(q): the row holding q clusters is row n_items - q + 1
+      chi2_at <- function(q) merge_stats$chi_square[n_items - q + 1]
+      within <- function(q) if (q == 1) chi_total else chi_total - chi2_at(q)
       
-      ratios <- data.frame(
-        q = integer(0),
-        delta_q = numeric(0),
-        delta_q_plus_1 = numeric(0),
-        ratio = numeric(0)
-      )
-      
-      for (q in qmax:(qmin + 1)) {
-        # Step to go from q clusters to q-1: step = n - q + 1 (but step is 0-indexed in merge_stats)
-        # In R 1-indexed: row index for this step is (n - q + 2)
-        step_q <- n - q + 1
-        step_q_plus_1 <- n - (q + 1) + 1  # = n - q
-        
-        # Reduction values (row indices are step + 1 due to step 0)
-        delta_q <- merge_stats$reduction[step_q + 1]
-        delta_q_plus_1 <- merge_stats$reduction[step_q_plus_1 + 1]
-        
-        # Avoid division by zero
-        if (delta_q_plus_1 > 0) {
-          r <- delta_q / delta_q_plus_1
-        } else {
-          r <- Inf
-        }
-        
-        ratios <- rbind(ratios, data.frame(
-          q = q,
-          delta_q = delta_q,
-          delta_q_plus_1 = delta_q_plus_1,
-          ratio = r
-        ))
+      ratios <- data.frame(q = qmin:qmax, within_q = NA_real_,
+                           within_q_minus_1 = NA_real_, ratio = NA_real_)
+      for (r in seq_len(nrow(ratios))) {
+        q <- ratios$q[r]
+        ratios$within_q[r] <- within(q)
+        ratios$within_q_minus_1[r] <- within(q - 1)
+        ratios$ratio[r] <- if (ratios$within_q_minus_1[r] > 0)
+          ratios$within_q[r] / ratios$within_q_minus_1[r] else NA_real_
       }
       
-      # Find q that minimises the ratio (largest relative jump)
-      if (nrow(ratios) == 0 || all(is.infinite(ratios$ratio))) {
+      if (all(is.na(ratios$ratio))) {
         optimal_q <- qmin
       } else {
         optimal_q <- ratios$q[which.min(ratios$ratio)]
       }
       
-      # Convert optimal_q to step number
-      optimal_step <- n_items - optimal_q
-      
-      # Verify: number of clusters at optimal_step
-      actual_clusters <- n_items - optimal_step
-      
       list(
-        optimal_clusters = actual_clusters,
-        optimal_step = optimal_step,
+        optimal_clusters = optimal_q,
+        optimal_step = n_items - optimal_q,
         ratios = ratios
       )
     },
+
     
     .clusterContingency = function(crosstab, dim = "row") {
       
@@ -291,7 +271,7 @@ chisqclusterClass <- R6::R6Class(
       rownames(crosstab) <- orig_labels
       
       # Calculate initial chi-square on ORIGINAL table
-      chi_init <- suppressWarnings(stats::chisq.test(as.matrix(orig_crosstab))$statistic)
+      chi_init <- suppressWarnings(stats::chisq.test(as.matrix(orig_crosstab), correct = FALSE)$statistic)
       
       # Get critical value using ORIGINAL table dimensions
       # Only required for Greenacre method; for Husson method, compute if possible but don't fail
@@ -372,7 +352,7 @@ chisqclusterClass <- R6::R6Class(
           
           # Calculate chi-square
           new_chi <- if (nrow(temp_data) > 1) {
-            suppressWarnings(stats::chisq.test(as.matrix(temp_data))$statistic)
+            suppressWarnings(stats::chisq.test(as.matrix(temp_data), correct = FALSE)$statistic)
           } else {
             0
           }
@@ -578,7 +558,10 @@ chisqclusterClass <- R6::R6Class(
           paste0("Optimal partition at step ", sig_step, " yields ", 
                  method_info$optimal_clusters, " cluster",
                  if(method_info$optimal_clusters > 1) "s" else "",
-                 " based on the largest relative drop in inertia gain. See Husson et al. (2017).")
+                 ": the partition whose last split removes the largest share of the remaining ",
+                 "within-cluster inertia (smallest W(q)/W(q\u22121), as in FactoMineR's HCPC(); ",
+                 "Husson et al. 2017). This criterion locates the bend of the inertia curve and makes ",
+                 "no significance claim; read it with the dendrogram.")
         }
         
         summary_text <- paste0(
@@ -665,7 +648,10 @@ chisqclusterClass <- R6::R6Class(
           paste0("Optimal partition at step ", sig_step, " yields ", 
                  method_info$optimal_clusters, " cluster",
                  if(method_info$optimal_clusters > 1) "s" else "",
-                 " based on the largest relative drop in inertia gain. See Husson et al. (2017).")
+                 ": the partition whose last split removes the largest share of the remaining ",
+                 "within-cluster inertia (smallest W(q)/W(q\u22121), as in FactoMineR's HCPC(); ",
+                 "Husson et al. 2017). This criterion locates the bend of the inertia curve and makes ",
+                 "no significance claim; read it with the dendrogram.")
         }
         
         summary_text <- paste0(
@@ -1052,8 +1038,10 @@ chisqclusterClass <- R6::R6Class(
         "providing a principled basis for simplifying the table.</p>",
         
         "<p><strong>Table size constraints:</strong> Critical values are only available for tables where ",
-        "3 ≤ min(rows, columns) ≤ 11 and max(rows, columns) ≤ 201. For larger tables, use the inertia ",
-        "gain ratio method instead.</p>",
+        "3 ≤ min(rows, columns) ≤ 11 and max(rows, columns) ≤ 201 (Pearson & Hartley 1972, Table 51). ",
+        "A table outside this range (including any table with only two rows or two columns) is rejected ",
+        "with a message when this method is selected; use the inertia gain ratio method instead, which ",
+        "has no size restriction.</p>",
         
         # Method 2: Husson
         "<h4 style='color: #1a5276; margin-top: 1.5em;'>Method 2: Inertia Gain Ratio (Husson et al., 2017)",
@@ -1061,19 +1049,27 @@ chisqclusterClass <- R6::R6Class(
         "</h4>",
         
         "<p>This method uses a data-driven criterion to find the 'natural' number of clusters by ",
-        "identifying the point in the hierarchy where the <strong>relative gain in between-cluster ",
-        "inertia drops most sharply</strong>.</p>",
+        "identifying the partition whose last split removes the <strong>largest share of the ",
+        "within-cluster inertia</strong>, as detailed below.</p>",
         
-        "<p>At each step going from <em>q</em> clusters to <em>q</em>−1 clusters, the algorithm records ",
-        "the inertia gain Δ(<em>q</em>). Since total inertia equals χ²/<em>N</em>, this is equivalent to ",
-        "tracking the chi-squared reduction at each merge. The optimal partition is the one that minimises:</p>",
+        "<p>Let <em>W</em>(<em>q</em>) be the within-cluster inertia of the partition into <em>q</em> clusters, ",
+        "that is the part of the table's total inertia (χ²/<em>N</em>) lost by merging categories down to ",
+        "<em>q</em> groups; <em>W</em>(1) is the total inertia and <em>W</em>(<em>q</em>) decreases as <em>q</em> grows. ",
+        "For each candidate <em>q</em> between 2 and min(10, number of categories − 1), the method computes the ratio</p>",
         
-        "<p style='text-align: center; font-style: italic;'>Δ(q) / Δ(q+1)</p>",
+        "<p style='text-align: center; font-style: italic;'>W(q) / W(q−1)</p>",
         
-        "<p>This ratio captures the 'elbow' in the inertia curve—the point where further merging ",
-        "yields diminishing returns. A small ratio indicates that the current merge causes relatively little ",
-        "loss compared to the next merge, suggesting the current partition captures substantially more ",
-        "structure than the next coarser partition.</p>",
+        "<p>and retains the <em>q</em> for which this ratio is smallest, that is, the partition whose last split ",
+        "removes the largest share of the remaining within-cluster inertia. This is the 'elbow' of the inertia ",
+        "curve: splitting further yields comparatively little. The calculation is the one performed by ",
+        "FactoMineR's <code>HCPC()</code> function, so that the two agree on the same hierarchy.</p>",
+        
+        "<p><strong>A caution:</strong> because the ratio compares successive within-cluster inertias, it is ",
+        "smallest just after the cheapest merges, so when a few categories have almost identical profiles the ",
+        "criterion can favour a fine partition (many clusters) even when the dendrogram shows an obvious coarser ",
+        "structure. Read the suggested partition together with the dendrogram and, where the table size allows, ",
+        "with the critical-value method, which asks a different question (whether merging loses significant ",
+        "association rather than where the inertia curve bends).</p>",
         
         "<p><strong>Interpretation:</strong> The resulting groups represent a parsimonious summary of ",
         "the table's structure, balancing detail against simplicity. Unlike the critical chi-squared ",
@@ -1085,10 +1081,12 @@ chisqclusterClass <- R6::R6Class(
         
         "<p><strong>Note on implementation:</strong> The criterion described here originates from Husson ",
         "et al. (2017) and is implemented in FactoMineR's <code>HCPC()</code> function. In FactoMineR, ",
-        "the criterion is typically applied to a hierarchy built from Correspondence Analysis coordinates ",
-        "using Euclidean distance. In this module, we apply the same criterion to a hierarchy built ",
-        "directly from chi-squared distances between row (or column) profiles. Both approaches use the ",
-        "same partition selection logic; they differ only in how the underlying hierarchy is constructed.</p>",
+        "the criterion is applied to a Ward hierarchy built from Correspondence Analysis coordinates. ",
+        "Ward clustering of row (or column) profiles in the chi-squared metric is the same hierarchy as the one ",
+        "built here by merging the pair of categories that reduces χ² the least (Greenacre 1988), so both the ",
+        "merge sequence and the selected number of clusters coincide with <code>HCPC()</code> applied to the ",
+        "rows (or columns) of a CA of the same table, with the same minimum and maximum number of clusters ",
+        "(<code>HCPC()</code> uses a minimum of 3 by default; this module uses 2).</p>",
         
         # Dendrogram interpretation
         "<h3 style='color: #2874A6; margin-top: 1.5em;'>Interpreting the Dendrogram</h3>",
@@ -1107,7 +1105,7 @@ chisqclusterClass <- R6::R6Class(
         "statistically justified merge and the first unjustified merge. Clusters forming entirely to the ",
         "left of this line represent statistically significant groupings at α = 0.05.</li>",
         "<li>For the <strong>inertia gain ratio method</strong>, the line indicates the optimal partition ",
-        "identified by the largest relative drop in inertia gain.</li>",
+        "identified by the smallest ratio of successive within-cluster inertias, W(q)/W(q\u22121).</li>",
         "</ul>",
         
         # Practical considerations
@@ -1115,7 +1113,7 @@ chisqclusterClass <- R6::R6Class(
         
         "<p><strong>Comparing the two methods:</strong> The critical chi-squared method provides a formal ",
         "significance test but is limited to smaller tables. The inertia gain ratio method is more flexible ",
-        "and often suggests fewer, larger clusters. When both methods are applicable, comparing their results ",
+        "but carries no significance test (see the caution above). When both methods are applicable, comparing their results ",
         "can provide useful perspective on the table's structure.</p>",
         
         "<p><strong>Reduction percentages:</strong> The percentage reduction at each merge indicates how ",

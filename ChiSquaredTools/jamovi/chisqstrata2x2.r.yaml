@@ -105,6 +105,8 @@ items:
         - cols
         - strata
         - counts
+        - rowRef
+        - colRef
       columns:
         - name: test
           title: 'Test'
@@ -132,6 +134,7 @@ items:
           type: number
       refs:
        - azen2021
+       - mantelhaenszel1959
 
     - name: homogeneityTable
       title: Tests for Homogeneity of Odds Ratios
@@ -158,6 +161,7 @@ items:
       refs:
        - azen2021
        - breslowday1980
+       - tarone1985
        - pagano2018
        - sheskin2011
        - woolf1955

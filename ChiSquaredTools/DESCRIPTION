@@ -1,7 +1,7 @@
 Package: ChiSquaredTools
 Type: Package
 Title: Chi-Squared Analysis Tools
-Version: 1.2.1
+Version: 1.2.2
 Date: 2026-10-13
 Author: Gianmarco Alberti
 Maintainer: Gianmarco Alberti <gianmarcoalberti@gmail.com>

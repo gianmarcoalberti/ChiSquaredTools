@@ -2,7 +2,7 @@ title: Simultaneous Reduction of Dimension (SRD)
 name: chisqsrd
 jus: '3.0'
 stage: 0
-compilerMode: aggressive
+compilerMode: tame
 children:
   - type: VariableSupplier
     persistentItems: false
@@ -29,16 +29,26 @@ children:
             name: counts
             maxItemCount: 1
             isTarget: true
-  - type: LayoutBox
-    margin: large
+  - type: CollapseBox
+    label: Analysis Settings
+    collapsed: false
+    stretchFactor: 1
     children:
-      - type: TextBox
-        name: alpha
-        format: number
-  - type: LayoutBox
-    margin: large
+      - type: LayoutBox
+        margin: large
+        children:
+          - type: TextBox
+            name: alpha
+            format: number
+          - type: CheckBox
+            name: doPruning
+  - type: CollapseBox
+    label: Display Options
+    collapsed: true
+    stretchFactor: 1
     children:
-      - type: CheckBox
-        name: doPruning
-      - type: CheckBox
-        name: showMethodInfo
+      - type: LayoutBox
+        margin: large
+        children:
+          - type: CheckBox
+            name: showMethodInfo

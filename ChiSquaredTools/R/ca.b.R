@@ -106,13 +106,22 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
                 format = jmvcore::Cell.BEGIN_GROUP
             )
             
-            # Pre-populate summary table with placeholder
+            # Pre-populate summary table: one row for the chi-squared (or
+            # Freeman-Tukey) test; a second row, with a Monte Carlo p-value,
+            # for the adjusted statistic when adjusted residuals are selected
             if (self$options$showSummary) {
                 table <- self$results$summaryTable
-                table$setRow(rowNo = 1, values = list(
-                    statistic = NA, df = NA, pvalue = NA,
+                table$addRow(rowKey = "main", values = list(
+                    test = "", statistic = NA, df = NA, pvalue = NA,
                     totalInertia = NA, nRows = NA, nCols = NA
                 ))
+                if (self$options$distanceMetric != "freemanTukey" &&
+                    self$options$residualType == "adjusted") {
+                    table$addRow(rowKey = "adjusted", values = list(
+                        test = "", statistic = NA, df = NA, pvalue = NA,
+                        totalInertia = NA, nRows = NA, nCols = NA
+                    ))
+                }
             }
             
             # Pre-populate inertia table
@@ -271,7 +280,11 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
             
             # Build contingency table
             private$.contingencyTable <- private$.buildContingencyTable()
-            if (is.null(private$.contingencyTable)) return()
+            if (is.null(private$.contingencyTable))
+                jmvcore::reject(paste0("No complete cases: every row of the data is missing '",
+                                       self$options$rows, "', '", self$options$cols, "'",
+                                       if (!is.null(self$options$counts)) paste0(" or '", self$options$counts, "'") else "",
+                                       "."))
             
             # Run CA based on selected metric and residual type
             private$.caResult <- private$.runCA(private$.contingencyTable)
@@ -372,7 +385,7 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
             keep <- c("N", "n_rows", "n_cols", "row_mass", "col_mass",
                       "row_std", "col_std", "row_princ", "col_princ",
                       "row_contrib_coord", "col_contrib_coord",
-                      "eigenvalues", "inertia_total", "inertia_proportion",
+                      "eigenvalues", "eigenvalues_all", "inertia_total", "inertia_proportion",
                       "inertia_cumulative", "n_axes", "stat_name",
                       "distance_type", "resid_label",
                       "row_contrib", "col_contrib", "row_cos2", "col_cos2")
@@ -440,26 +453,29 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
         .addAxesNotice = function() {
             ca <- private$.caResult
             if (is.null(ca)) return()
-            nExtracted <- ca$n_axes
+            nExtracted <- ca$n_axes                      # axes reported = min(requested, table dimensions)
+            nTable <- min(ca$n_rows, ca$n_cols) - 1      # dimensions the table has
             nRequested <- self$options$nAxes
             maxPlotDim <- max(self$options$dim1, self$options$dim2)
             
             msgs <- character(0)
-            if (nExtracted == 1) {
+            if (nTable == 1) {
                 # e.g. a 2 x J table: one dimension only
                 if (nRequested > 1 || maxPlotDim > 1) {
                     msgs <- "This table has only one dimension (min(rows, columns) \u2212 1 = 1), so only Dimension 1 is reported and the two-dimensional plots cannot be drawn."
                 }
             } else {
-                if (nRequested > nExtracted) {
+                if (nRequested > nTable) {
                     msgs <- c(msgs, sprintf(
                         "This table has %d dimensions (min(rows, columns) \u2212 1); %d were requested, so %d are reported.",
-                        nExtracted, nRequested, nExtracted))
+                        nTable, nRequested, nTable))
                 }
                 if (maxPlotDim > nExtracted) {
-                    msgs <- c(msgs, sprintf(
+                    msgs <- c(msgs, if (maxPlotDim > nTable) sprintf(
                         "The plots cannot display Dimension %d, because the table has %d dimensions. Choose plot dimensions between 1 and %d.",
-                        maxPlotDim, nExtracted, nExtracted))
+                        maxPlotDim, nTable, nTable) else sprintf(
+                        "The plots cannot display Dimension %d, because only %d axes were extracted ('Number of axes to extract'); the table has %d dimensions, so raise the number of axes to at least %d.",
+                        maxPlotDim, nExtracted, nTable, maxPlotDim))
                 }
             }
             # Hide the two-dimensional plots that cannot be drawn: a visible
@@ -600,6 +616,36 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
             df <- (I - 1) * (J - 1)
             p_value <- stats::pchisq(test_statistic, df, lower.tail = FALSE)
             
+            # Eigenvalues used for inference (overall test and Malinvaud's test).
+            # With adjusted standardised residuals the sum of squared residuals
+            # (the "adjusted" statistic) is NOT chi-squared with (I-1)(J-1) df:
+            # each adjusted residual has unit variance, so its expectation under
+            # independence is close to I*J and the p-values would be far too
+            # small (Beh & Lombardo 2014, sect. 9.5.1, use a Monte Carlo
+            # p-value for it). The map keeps the adjusted decomposition; the
+            # tests are taken from the Pearson decomposition of the same table.
+            test_eigenvalues <- eigenvalues_all
+            adj_statistic <- NA_real_
+            adj_mc_p <- NA_real_
+            adj_mc_B <- NA_integer_
+            if (distance_type == "chisq_adj") {
+                adj_statistic <- test_statistic
+                S_pearson <- (P - E) / sqrt(E + 1e-16)
+                test_eigenvalues <- svd(S_pearson, nu = 0, nv = 0)$d^2
+                test_statistic <- sum(test_eigenvalues[seq_len(end_idx)]) * grand_total
+                p_value <- stats::pchisq(test_statistic, df, lower.tail = FALSE)
+                stat_name <- "\u03c7\u00b2"
+                
+                # Monte Carlo p-value for the adjusted statistic, as in Beh &
+                # Lombardo (2014, sect. 9.5.1): tables with the observed margins
+                # are drawn under independence (r2dtable) and the adjusted
+                # statistic is recomputed for each. Margins are fixed, so the
+                # expected counts and the adjustment weights are constant.
+                adj_mc <- private$.adjustedStatisticMonteCarlo(N, adj_statistic)
+                adj_mc_p <- adj_mc$p
+                adj_mc_B <- adj_mc$B
+            }
+            
             # Contributions (%) - different calculation for Freeman-Tukey
             row_contrib <- matrix(0, nrow = I, ncol = n_axes_actual)
             col_contrib <- matrix(0, nrow = J, ncol = n_axes_actual)
@@ -638,8 +684,20 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
                     col_profile <- P[, j] / c[j]
                     col_dist_sq[j] <- 4 * sum((sqrt(col_profile) - sqrt(r))^2)
                 }
+            } else if (distance_type == "chisq_adj") {
+                # Adjusted residuals: the plain chi-squared profile distance is
+                # the Pearson quantity and would give qualities above 1. The
+                # distance in the adjusted metric is the squared norm of the
+                # principal coordinates over all M = min(I, J) - 1 dimensions,
+                # i.e. sum_m (u_im * lambda_m)^2 / p_i. (and likewise for columns).
+                svd_full <- svd(S)
+                M_dims <- seq_len(min(I, J) - 1)
+                row_dist_sq <- rowSums((svd_full$u[, M_dims, drop = FALSE] %*%
+                                        diag(svd_full$d[M_dims], nrow = length(M_dims)))^2) / r
+                col_dist_sq <- rowSums((svd_full$v[, M_dims, drop = FALSE] %*%
+                                        diag(svd_full$d[M_dims], nrow = length(M_dims)))^2) / c
             } else {
-                # Chi-squared distance (standard or adjusted)
+                # Chi-squared distance (Pearson residuals)
                 row_dist_sq <- numeric(I)
                 for (i in 1:I) {
                     row_profile <- P[i, ] / r[i]
@@ -693,7 +751,7 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
             colnames(row_contrib_coord) <- colnames(col_contrib_coord) <- paste0("Dim", 1:n_axes_actual)
             
             # Malinvaud's test
-            malinvaud <- private$.computeMalinvaud(eigenvalues_all, start_idx, I, J, grand_total, n_axes_actual)
+            malinvaud <- private$.computeMalinvaud(test_eigenvalues, start_idx, I, J, grand_total, n_axes_actual)
             
             # Row and column profiles (for profiles table)
             row_profiles <- P / r  # Each row divided by its marginal
@@ -707,10 +765,13 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
                 row_princ = row_princ, col_princ = col_princ,
                 row_contrib_coord = row_contrib_coord, col_contrib_coord = col_contrib_coord,
                 eigenvalues = eigenvalues, singular_values = d,
+                eigenvalues_all = all_nontrivial,
                 inertia_total = inertia_total,
                 inertia_proportion = inertia_proportion, inertia_cumulative = inertia_cumulative,
                 n_axes = n_axes_actual,
                 test_statistic = test_statistic, stat_name = stat_name,
+                adj_statistic = adj_statistic, adj_mc_p = adj_mc_p, adj_mc_B = adj_mc_B,
+                pearson_inertia = test_statistic / grand_total,
                 distance_type = distance_type, resid_label = resid_label,
                 df = df, p_value = p_value,
                 row_contrib = row_contrib, col_contrib = col_contrib,
@@ -750,6 +811,27 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
         # =====================================================================
         # MALINVAUD'S TEST
         # =====================================================================
+        .adjustedStatisticMonteCarlo = function(N, observed_stat, B = 4999, seed = 20261020) {
+            # Monte Carlo p-value for the adjusted chi-squared statistic
+            # (sum of squared adjusted standardised residuals) under
+            # independence with fixed margins. p = (1 + #{stat_b >= observed}) / (B + 1).
+            # A fixed seed keeps the reported value reproducible between runs.
+            n <- sum(N)
+            r <- rowSums(N) / n
+            c <- colSums(N) / n
+            E <- outer(rowSums(N), colSums(N)) / n
+            W <- E * outer(1 - r, 1 - c)          # denominator: E * (1 - p_i.)(1 - p_.j)
+            ok <- W > 0
+            
+            old_seed <- if (exists(".Random.seed", envir = globalenv())) get(".Random.seed", envir = globalenv()) else NULL
+            set.seed(seed)
+            sims <- stats::r2dtable(B, rowSums(N), colSums(N))
+            if (!is.null(old_seed)) assign(".Random.seed", old_seed, envir = globalenv())
+            
+            stats_b <- vapply(sims, function(Tb) sum(((Tb - E)^2 / W)[ok]), numeric(1))
+            list(p = (1 + sum(stats_b >= observed_stat - 1e-10)) / (B + 1), B = B)
+        },
+        
         .computeMalinvaud = function(eigenvalues_all, start_idx, I, J, grand_total, n_axes) {
             
             # The M = min(I, J) - 1 dimensions of the solution (for
@@ -1193,34 +1275,32 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
         # Find optimal partition using Husson's inertia gain ratio
         # ---------------------------------------------------------------------
         .findOptimalPartitionHusson = function(merge_stats, qmin = 2, qmax = NULL) {
+            # Same criterion as .findOptimalPartitionInertia() in the Clustering
+            # facility: the one implemented in FactoMineR's HCPC(). With W(q)
+            # the within-cluster inertia of the q-cluster partition (here the
+            # statistic lost by merging down to q clusters, W(1) = total), choose
+            # the q in [qmin, qmax] minimising W(q) / W(q - 1).
+            # merge_stats: row 1 = initial state (n_items clusters); row k + 1 =
+            # after k merges, with statistic = statistic of the reduced table.
             n_items <- nrow(merge_stats)
-            n <- n_items - 1
+            stat_total <- merge_stats$statistic[1]
             
-            if (is.null(qmax)) {
-                qmax <- min(10, n)
-            }
-            
+            if (is.null(qmax)) qmax <- min(10, n_items - 1)
             qmin <- max(2, qmin)
-            qmax <- min(qmax, n)
+            qmax <- min(qmax, n_items - 1)
             
-            if (qmax <= qmin) {
-                # step that leaves qmin clusters (n_items items, one merge per step)
+            if (qmax < qmin || n_items < 3 || !is.finite(stat_total) || stat_total <= 0) {
                 return(list(optimal_clusters = qmin, optimal_step = max(0, n_items - qmin)))
             }
             
-            # Compute ratios for each candidate q
+            within <- function(q) if (q == 1) stat_total else stat_total - merge_stats$statistic[n_items - q + 1]
+            
             best_ratio <- Inf
             best_q <- qmin
-            
-            for (q in qmax:(qmin + 1)) {
-                step_q <- n - q + 1
-                step_q_plus_1 <- n - q
-                
-                delta_q <- merge_stats$reduction[step_q + 1]
-                delta_q_plus_1 <- merge_stats$reduction[step_q_plus_1 + 1]
-                
-                if (delta_q_plus_1 > 0) {
-                    ratio <- delta_q / delta_q_plus_1
+            for (q in qmin:qmax) {
+                w_prev <- within(q - 1)
+                if (w_prev > 0) {
+                    ratio <- within(q) / w_prev
                     if (ratio < best_ratio) {
                         best_ratio <- ratio
                         best_q <- q
@@ -1230,6 +1310,7 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
             
             list(optimal_clusters = best_q, optimal_step = n_items - best_q)
         },
+
         
         # ---------------------------------------------------------------------
         # Reconstruct cluster membership at a given step
@@ -1746,7 +1827,16 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
             # A bend smaller than 0.1 (on the unit-square scale) is not
             # treated as an elbow
             if (max(distances) < 0.1) return(0L)
-            as.integer(which.max(distances))
+            k <- as.integer(which.max(distances))
+            
+            # Absolute ceiling: range normalisation makes any convex trajectory
+            # bend somewhere, so an elbow is suggested only when the cumulative
+            # M2 at that step is small in absolute terms. Configurations are
+            # scaled to unit weighted sum of squares, so M2 is the share of the
+            # full-data configuration lost; 0.10 (a tenth) is this module's
+            # convention, not part of Krzanowski's (1993) method.
+            if (M2_values[k] > 0.10) return(0L)
+            k
         },
         
         # ---------------------------------------------------------------------
@@ -1784,25 +1874,41 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
             ca <- private$.caResult
             table <- self$results$summaryTable
             
-            table$setRow(rowNo = 1, values = list(
+            is_adjusted <- ca$distance_type == "chisq_adj"
+            
+            table$setRow(rowKey = "main", values = list(
+                test = if (ca$distance_type == "hellinger") "T\u00b2 (Freeman-Tukey)" else "\u03c7\u00b2 (Pearson)",
                 statistic = ca$test_statistic, 
                 df = ca$df, 
                 pvalue = ca$p_value,
-                totalInertia = ca$inertia_total, 
+                totalInertia = if (is_adjusted) ca$pearson_inertia else ca$inertia_total, 
                 nRows = ca$n_rows, 
                 nCols = ca$n_cols
             ))
             
-            # Set column title based on statistic type
-            table$getColumn("statistic")$setTitle(ca$stat_name)
+            if (is_adjusted) {
+                table$setRow(rowKey = "adjusted", values = list(
+                    test = "\u0058\u0303\u00b2 (adjusted), Monte Carlo",
+                    statistic = ca$adj_statistic,
+                    df = NA,
+                    pvalue = ca$adj_mc_p,
+                    totalInertia = ca$inertia_total,
+                    nRows = NA, nCols = NA
+                ))
+            }
             
             # Add note about distance/residual type
             if (ca$distance_type == "hellinger") {
                 table$setNote("distNote", 
                     "Freeman-Tukey residuals (Hellinger distance). T\u00b2 is asymptotically \u03c7\u00b2-distributed.")
-            } else if (ca$distance_type == "chisq_adj") {
-                table$setNote("distNote", 
-                    "Adjusted standardised residuals (\u03c7\u00b2 distance with marginal correction).")
+            } else if (is_adjusted) {
+                table$setNote("distNote", paste0(
+                    "Adjusted standardised residuals (\u03c7\u00b2 distance with marginal correction). ",
+                    "The map, the inertia decomposition and the second row use the adjusted residuals; ",
+                    "the adjusted statistic does not follow a \u03c7\u00b2 distribution with (I\u22121)(J\u22121) df, ",
+                    "so its p-value is obtained by Monte Carlo (", format(ca$adj_mc_B, big.mark = ","),
+                    " tables with the observed margins drawn under independence; Beh & Lombardo 2014). ",
+                    "The first row and Malinvaud's test use the Pearson decomposition of the same table."))
             } else {
                 table$setNote("distNote", 
                     "Pearson residuals (\u03c7\u00b2 distance).")
@@ -2018,6 +2124,16 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
                     malinDf = ca$malinvaud$df[k],
                     malinP = ca$malinvaud$p_value[k]
                 ))
+            }
+            if (ca$distance_type == "chisq_adj") {
+                table$setNote("adjNote", paste0(
+                    "Eigenvalues and percentages are those of the adjusted-residual decomposition shown in the map; ",
+                    "Malinvaud's test is computed from the Pearson decomposition of the same table, ",
+                    "whose eigenvalues follow the \u03c7\u00b2 approximation (Saporta 2006; Beh & Lombardo 2014)."))
+            } else if (ca$distance_type == "hellinger") {
+                table$setNote("adjNote", paste0(
+                    "Malinvaud's test is applied to the Freeman-Tukey decomposition; T\u00b2 is asymptotically ",
+                    "\u03c7\u00b2-distributed (Beh, Lombardo & Alberti 2018)."))
             }
         },
         
@@ -2245,11 +2361,8 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
                     
                     # Highlight above-average contributors (guard against NA)
                     if (!is.na(dim_contrib[idx]) && dim_contrib[idx] >= avg_contrib) {
-                        table$addFormat(
-                            rowKey = row_key,
-                            col = "contrib",
-                            format = jmvcore::Cell.NEGATIVE
-                        )
+                        table$addFootnote(rowKey = row_key, col = "contrib", "Above-average contribution: defines this dimension")
+                        table$addFormat(rowKey = row_key, col = "contrib", format = jmvcore::Cell.NEGATIVE)   # red, kept pending the Phase 4 decision
                     }
                 }
             }
@@ -2537,22 +2650,16 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
                 if (threshold > 0) {
                     for (j in seq_len(J)) {
                         if (abs(residual_matrix[i, j]) > threshold) {
-                            table$addFormat(
-                                rowKey = paste0("row", i),
-                                col = paste0("col", j),
-                                format = jmvcore::Cell.NEGATIVE
-                            )
+                            table$addFootnote(rowKey = paste0("row", i), col = paste0("col", j), "|residual| above the highlighting threshold")
+                            table$addFormat(rowKey = paste0("row", i), col = paste0("col", j), format = jmvcore::Cell.NEGATIVE)   # red, kept pending the Phase 4 decision
                         }
                     }
                 }
                 
                 # Highlight above-average row contributions
                 if (row_pct[i] > avg_row_pct) {
-                    table$addFormat(
-                        rowKey = paste0("row", i),
-                        col = "rowPct",
-                        format = jmvcore::Cell.NEGATIVE
-                    )
+                    table$addFootnote(rowKey = paste0("row", i), col = "rowPct", paste("Above-average contribution to", sub("^% of ", "", stat_label)))
+                    table$addFormat(rowKey = paste0("row", i), col = "rowPct", format = jmvcore::Cell.NEGATIVE)   # red, kept pending the Phase 4 decision
                 }
             }
             
@@ -2575,11 +2682,8 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
             # Highlight above-average column contributions
             for (j in seq_len(J)) {
                 if (col_pct[j] > avg_col_pct) {
-                    table$addFormat(
-                        rowKey = "colPct",
-                        col = paste0("col", j),
-                        format = jmvcore::Cell.NEGATIVE
-                    )
+                    table$addFootnote(rowKey = "colPct", col = paste0("col", j), paste("Above-average contribution to", sub("^% of ", "", stat_label)))
+                    table$addFormat(rowKey = "colPct", col = paste0("col", j), format = jmvcore::Cell.NEGATIVE)   # red, kept pending the Phase 4 decision
                 }
             }
             
@@ -2666,11 +2770,8 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
                 
                 table$addRow(rowKey = i, values = values)
                 
-                table$addFormat(
-                    rowKey = i,
-                    col = paste0("corr", primary_dim),
-                    format = jmvcore::Cell.NEGATIVE
-                )
+                table$addFootnote(rowKey = i, col = paste0("corr", primary_dim), "Primary dimension (largest |correlation|)")
+                table$addFormat(rowKey = i, col = paste0("corr", primary_dim), format = jmvcore::Cell.NEGATIVE)   # red, kept pending the Phase 4 decision
             }
             
             correl_explanation <- "Correlation = \u00b1\u221acos\u00b2, where sign reflects coordinate direction. Quality = sum of cos\u00b2 across all extracted dimensions (overall representation quality)."
@@ -3053,7 +3154,8 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
                 }
             } else {
                 paste0(
-                    "Husson method: Optimal partition found by minimising the inertia gain ratio. ",
+                    "Husson method: partition with the smallest ratio of successive within-cluster inertias, ",
+                    "W(q)/W(q\u22121), as in FactoMineR's HCPC() (Husson et al. 2017); no significance claim is made. ",
                     "Statistic shows ", delta_stat_label, " at final merge."
                 )
             }
@@ -3146,9 +3248,14 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
                 <li><strong>Stretching:</strong> Profile coordinates move further from the origin, 
                 with the degree of stretching depending on marginal proportions. Categories with 
                 small marginals experience greater stretching.</li>
-                <li><strong>Enhanced detection:</strong> Cells that deviate significantly from 
-                independence may be more readily identified, as the adjusted chi-squared statistic 
-                \u0058\u0303\u00b2 is typically larger than X\u00b2.</li>
+                <li><strong>Cell-level assessment:</strong> each adjusted residual is approximately 
+                standard normal under independence, so cells can be compared against \u00b11.96 
+                directly. The sum of their squares, \u0058\u0303\u00b2, is typically larger than X\u00b2 
+                but does not follow a \u03c7\u00b2 distribution with (I\u22121)(J\u22121) df; Beh and 
+                Lombardo (2014) assess it by Monte Carlo. The Summary table therefore reports the 
+                Pearson \u03c7\u00b2 test (first row) and, when adjusted residuals are selected, the 
+                adjusted statistic with a Monte Carlo p-value (second row); Malinvaud's test is 
+                always computed from the Pearson decomposition.</li>
               </ul>
               <p>The relationship between standard and adjusted coordinates involves the stretching factor 
               \u03c9<sub>m</sub> for each dimension, such that \u0066\u0303<sub>im</sub> = f<sub>im</sub> \u00d7 
@@ -3265,7 +3372,7 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
               </ul>
               
               <p><strong>Dimension definition:</strong> The average contribution is 100%/k, where k is the 
-              number of plane-defining categories. Categories contributing more than average are considered 
+              number of plane-defining categories. Categories contributing at least the average are considered 
               <em>above-average contributors</em> and are the primary definers of that dimension.</p>
               
               <p style='font-size: 0.85em; color: #666; margin-top: 8px; margin-bottom: 12px;'><em>See: 
@@ -3277,6 +3384,32 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
             # -----------------------------------------------------------------
             html <- paste0(html, "
               <h3 style='color: #2874A6; margin-top: 1.5em;'>Understanding the Output Tables</h3>
+              
+              <p>The tables in the <em>Contribution biplot: dimension interpretation</em> group (Dimension 
+              definition, Dimension summary, Correlations with dimensions, Interpretation summary and Profiles) 
+              are the tabular counterpart of the contribution biplot and all follow its <strong>Plane defined by</strong> 
+              setting: the categories of the chosen variable <em>define</em> the dimensions, the categories of 
+              the other variable are <em>interpreted</em> relative to them. The rationale is Greenacre's (2013, 
+              2017) distinction between two questions that are easily confused:</p>
+              <ul style='margin-left: 2em;'>
+                <li><strong>What does a dimension mean?</strong> This is answered by the <em>contributions of the 
+                categories to the dimension</em> (how much of the dimension's inertia each defining category 
+                accounts for). Categories whose contribution reaches or exceeds the average, 100%/k for k categories, are the 
+                ones that give the axis its meaning; they are listed in the Dimension definition table and 
+                summarised by pole in the Dimension summary table.</li>
+                <li><strong>How well is a category explained by a dimension?</strong> This is answered by the 
+                <em>contribution of the dimension to the category</em>, the squared cosine cos\u00b2 (quality), 
+                reported for the interpreted categories as the signed correlation \u00b1\u221acos\u00b2 in the 
+                Correlations with dimensions table. A category can be well explained by a dimension while 
+                contributing little to it (a rare category), and vice versa, which is why the two tables are 
+                kept separate.</li>
+              </ul>
+              <p>The Interpretation summary joins the two readings: for each defining category it lists the 
+              interpreted categories lying on the same side of the dimension it defines; the Profiles table 
+              shows the conditional proportions behind those positions. The <em>Minimum quality (cos\u00b2) shown</em> 
+              setting hides, in the correlations table only, the interpreted categories whose total quality 
+              over the retained dimensions is below the chosen value, so that poorly represented categories 
+              do not drive the reading.</p>
               
               <h4 style='color: #5D6D7E; margin-top: 1em;'>Dimension Definition Table</h4>
               
@@ -3386,6 +3519,12 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
               is captured in the displayed plot. Categories with low quality may be poorly represented and 
               should be interpreted cautiously.</p>
               
+              <p>The denominator is the squared distance in the metric of the chosen residuals: the 
+              \u03c7\u00b2 distance for Pearson residuals, the Hellinger distance for Freeman-Tukey residuals 
+              and, for adjusted standardised residuals, the squared norm of the category's principal 
+              coordinates over all min(I, J) \u2212 1 dimensions. In every case the qualities of a category 
+              sum to 1 over all dimensions.</p>
+              
               <p style='font-size: 0.85em; color: #666; margin-top: 8px; margin-bottom: 12px;'><em>See: 
               Greenacre 2017; Beh & Lombardo 2014.</em></p>
             ")
@@ -3464,8 +3603,9 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
               the algorithm stops\u2014this merge would combine categories whose profiles differ significantly.</p>
               
               <p><strong>Table size constraints:</strong> Critical values are only available for tables where 
-              3 \u2264 min(rows, columns) \u2264 11 and max(rows, columns) \u2264 201. For larger tables, the module 
-              automatically uses the Husson method instead.</p>
+              3 \u2264 min(rows, columns) \u2264 11 and max(rows, columns) \u2264 201. For tables outside this range 
+              (including tables with only two rows or two columns), the module automatically uses the Husson 
+              method instead.</p>
               
               <p><strong>Note on Freeman-Tukey metric:</strong> When Freeman-Tukey residuals are selected, 
               the clustering uses T\u00b2 (Freeman-Tukey statistic) instead of \u03c7\u00b2. Since the 
@@ -3483,10 +3623,18 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
                            if (self$options$clusterMethod == "husson") " \u2014 <em>currently selected</em>" else "",
                            "</h4>
               
-              <p>This data-driven method builds a complete Ward hierarchy, then selects the optimal partition 
-              by finding the point where the relative gain in between-cluster inertia drops most sharply. 
-              The criterion minimises \u0394(q) / \u0394(q+1), where \u0394(q) is the inertia gain when going 
-              from q clusters to q\u22121.</p>
+              <p>This data-driven method builds the complete hierarchy (merging at each step the pair of 
+              categories whose fusion costs the least inertia, which is Ward's criterion in the chosen metric), 
+              then selects the partition into q clusters, for q between 2 and min(10, number of categories 
+              \u2212 1), that minimises W(q) / W(q\u22121), where W(q) is the within-cluster inertia of the 
+              q-cluster partition. The chosen partition is the one whose last split removes the largest share 
+              of the remaining within-cluster inertia. This is the calculation performed by FactoMineR's 
+              <code>HCPC()</code> (Husson et al. 2017 describe the same idea in terms of successive 
+              between-cluster inertia gains); the Clustering facility of this module uses the identical rule. 
+              Because the ratio compares successive within-cluster inertias, it is smallest just after the 
+              cheapest merges, so when a few categories have almost identical profiles the criterion can favour 
+              a fine partition; read it together with the plot and, where available, with the Greenacre or SRD 
+              methods, which test significance rather than locate the bend of the inertia curve.</p>
               
               <p><strong>Interpretation:</strong> The optimal partition captures the 'elbow' in the inertia 
               curve\u2014the point where further merging yields diminishing returns. Unlike the other methods, 
@@ -3536,8 +3684,8 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
               
               <p><strong>Practical guidance:</strong> SRD is useful when you want direct control over the 
               significance level and prefer a conservative approach. Greenacre's method provides a formal 
-              test but is limited to smaller tables. Husson's method is versatile and often suggests 
-              parsimonious solutions. When multiple methods are available, comparing their results can 
+              test but is limited to smaller tables. Husson's method is applicable to any table size but carries 
+              no significance test (see the caution above). When multiple methods are available, comparing their results can 
               provide useful perspective on the robustness of the identified structure.</p>
             ")
             
@@ -3601,7 +3749,9 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
               
               <p><em>Total inertia</em> is the sum of squared singular values (eigenvalues) from the SVD 
               decomposition. It equals the test statistic (\u03c7\u00b2 or T\u00b2) divided by the sample size n, and 
-              measures the total association strength in the table. Each dimension captures a proportion 
+              measures the total association strength in the table. With adjusted standardised residuals 
+              the decomposed inertia is the adjusted statistic divided by n, which exceeds the Pearson 
+              inertia reported in the first row of the Summary table. Each dimension captures a proportion 
               of this total inertia, shown in the inertia decomposition table.</p>
               
               <p><strong>Malinvaud's test</strong> (Saporta, 2006) assesses whether residual inertia remains 
@@ -3614,8 +3764,13 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
               of freedom. It therefore asks whether any structure remains after the first k\u22121 dimensions; 
               the row for dimension 1 is the overall test of independence.</p>
               
+              <p>The <strong>scree plot</strong> shows the percentage of inertia of every one of the M dimensions 
+              (bars; the dimensions not extracted are drawn fainter) and the cumulative percentage (line), 
+              so that the cumulative line reaches 100% and the bend of the curve can be judged against all 
+              dimensions, not only the extracted ones (Greenacre 2017).</p>
+              
               <p style='font-size: 0.85em; color: #666; margin-top: 8px; margin-bottom: 12px;'><em>See: 
-              Saporta 2006.</em></p>
+              Saporta 2006; Greenacre 2017.</em></p>
             ")
             
             # -----------------------------------------------------------------
@@ -3738,16 +3893,20 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
               <p><strong>Elbow detection:</strong> The trajectory typically remains low while uninformative 
               attributes are removed, then rises sharply when important attributes are eliminated. The 'elbow' 
               is the last step before the sharp rise (the point furthest below the straight line joining the 
-              first and last steps); attributes removed up to the elbow contribute little. When the trajectory 
-              is (nearly) straight, rises first and then flattens, or has fewer than three steps, no elbow is 
-              suggested and all attributes are kept. Krzanowski (1993) stops the elimination at a chosen number of 
+              first and last steps); attributes removed up to the elbow change the configuration least. Because 
+              the trajectory is range-normalised before the bend is located, any convex trajectory has a bend 
+              somewhere, so an elbow is suggested only when the cumulative M\u00b2 at that step is at most 0.10 
+              (the configurations being scaled to unit sum of squares, M\u00b2 is the share of the full-data 
+              configuration lost; the 0.10 ceiling is a convention of this module). When the trajectory 
+              is (nearly) straight, rises first and then flattens, has fewer than three steps, or exceeds the 
+              ceiling at the bend, no elbow is suggested and all attributes are kept. Krzanowski (1993) stops the elimination at a chosen number of 
               columns or at a preset M\u00b2 threshold; the elbow is this module's data-driven guide to that choice, 
               not part of the original method.</p>
               
-              <h4 style='color: #5D6D7E; margin-top: 1em;'>Reduced-Data CA Plot</h4>
+              <h4 style='color: #5D6D7E; margin-top: 1em;'>CA Plot with Attribute Assessment</h4>
               
-              <p>The reduced-data CA plot displays the correspondence analysis with low-influence attributes 
-              either faded or hidden entirely. This allows visual comparison with the full-data symmetric plot 
+              <p>The plot with attribute assessment displays the correspondence analysis with low-influence attributes 
+              either faded in the full-data solution (the default) or left out, with CA re-run on the remaining attributes. This allows visual comparison with the full-data symmetric plot 
               to assess whether the essential structure is preserved with fewer attributes.</p>
               
               <ul style='margin-left: 2em;'>
@@ -3855,7 +4014,9 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
                 n_remaining = elimination$n_remaining[i]
             ))
             if (i == elbow_step)
-                table$addFootnote(rowKey = i, col = "step", "Suggested elbow: the attributes removed up to this step add little to the row configuration.")
+                table$addFootnote(rowKey = i, col = "step", sprintf(
+                    "Suggested elbow: the attributes removed up to this step change the row configuration least (cumulative M\u00b2 = %.3f, i.e. %.0f%% of the full-data configuration retained); later removals cost markedly more.",
+                    elimination$M2_at_removal[i], 100 * (1 - elimination$M2_at_removal[i])))
         }
         
         table$setNote("method", paste0(
@@ -3924,7 +4085,7 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
                     if (maxDim > nDimReduced) {
                         self$results$reducedCAPlot$setVisible(FALSE)
                         msgs <- sprintf(paste0(
-                            "The reduced-data CA plot cannot be drawn: with the %d retained attributes ",
+                            "The plot with attribute assessment cannot be drawn: with the %d retained attributes ",
                             "the reduced table has %d dimension(s), fewer than the plotted Dimension %d."),
                             length(kept), nDimReduced, maxDim)
                     }
@@ -3954,20 +4115,29 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
             
             ca <- private$.caResult
             
+            # All min(I, J) - 1 dimensions, not only the extracted ones, so
+            # that the cumulative line reaches 100% and the elbow can be judged
+            eig_all <- if (!is.null(ca$eigenvalues_all)) ca$eigenvalues_all else ca$eigenvalues
+            prop_all <- eig_all / sum(eig_all)
             scree_df <- data.frame(
-                dim = factor(1:ca$n_axes),
-                percent = ca$inertia_proportion * 100,
-                cumulative = ca$inertia_cumulative * 100
+                dim = factor(seq_along(eig_all)),
+                percent = prop_all * 100,
+                cumulative = cumsum(prop_all) * 100,
+                extracted = seq_along(eig_all) <= ca$n_axes
             )
             
             p <- ggplot2::ggplot(scree_df, ggplot2::aes(x = dim)) + ggtheme  # jamovi results theme first; plot-specific tweaks follow
             p <- p + ggplot2::geom_bar(
-                ggplot2::aes(y = percent),
+                ggplot2::aes(y = percent, alpha = extracted),
                 stat = "identity",
                 fill = "#2171B5",
                 colour = NA,
                 width = 0.7
             )
+            p <- p + ggplot2::scale_alpha_manual(values = c(`TRUE` = 1, `FALSE` = 0.4),
+                                                 breaks = c(TRUE, FALSE),
+                                                 labels = c(`TRUE` = "Extracted", `FALSE` = "Not extracted"),
+                                                 name = NULL)
             p <- p + ggplot2::geom_line(
                 ggplot2::aes(y = cumulative, group = 1),
                 colour = "#CB181D",
@@ -3990,14 +4160,13 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
             )
             
             p <- p + ggplot2::theme(
-                panel.background = ggplot2::element_rect(fill = "white", colour = NA),
                 panel.border = .ctFrameRect(ggtheme), axis.line = ggplot2::element_blank(),
-                panel.grid.major.y = ggplot2::element_line(colour = "grey90"),
+                panel.grid.major.y = ggplot2::element_line(),
                 panel.grid.minor = ggplot2::element_blank(),
                 panel.grid.major.x = ggplot2::element_blank(),
-                axis.title = ggplot2::element_text(size = 10, colour = "grey30"),
-                axis.text = ggplot2::element_text(size = 9, colour = "grey40"),
-                plot.title = ggplot2::element_text(size = 11, face = "bold", colour = "grey20", hjust = 0.5)
+                axis.title = ggplot2::element_text(size = 10),
+                axis.text = ggplot2::element_text(size = 9),
+                plot.title = ggplot2::element_text(size = 11, face = "bold", hjust = 0.5)
             )
             
             print(p)
@@ -4295,12 +4464,11 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
             hasLegend <- (useContribRows || useContribCols || useQualityRows || useQualityCols)
             
             p <- p + ggplot2::theme(
-                panel.background = ggplot2::element_rect(fill = "white", colour = NA),
                 panel.border = .ctFrameRect(ggtheme), axis.line = ggplot2::element_blank(),
                 panel.grid = ggplot2::element_blank(),
-                axis.title = ggplot2::element_text(size = 10, colour = "grey30"),
-                axis.text = ggplot2::element_text(size = 9, colour = "grey40"),
-                plot.title = ggplot2::element_text(size = 11, face = "bold", colour = "grey20", hjust = 0.5),
+                axis.title = ggplot2::element_text(size = 10),
+                axis.text = ggplot2::element_text(size = 9),
+                plot.title = ggplot2::element_text(size = 11, face = "bold", hjust = 0.5),
                 legend.position = if (hasLegend) "right" else "none",
                 legend.background = ggplot2::element_rect(fill = "white", colour = NA),
                 legend.title = ggplot2::element_text(size = 9),
@@ -4353,17 +4521,13 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
             
             p <- p + ggplot2::labs(caption = caption_text)
             p <- p + ggplot2::theme(
-                plot.caption = ggplot2::element_text(size = 8, colour = "grey50", hjust = 0)
+                plot.caption = ggplot2::element_text(size = 8, hjust = 0)
             )
             
-            # Wrap print in tryCatch to handle ggrepel viewport errors
-            tryCatch({
-                print(p)
-                return(TRUE)
-            }, error = function(e) {
-                # Silently fail if viewport error occurs during initial render
-                return(FALSE)
-            })
+            # No tryCatch here: a render error must reach jamovi (a FALSE
+            # return leaves the image spinning and loses the message)
+            print(p)
+            return(TRUE)
         },
         
         # =====================================================================
@@ -4491,11 +4655,12 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
             p <- p + ggplot2::geom_hline(yintercept = 0, linewidth = 0.3, colour = "grey70", linetype = "dashed")
             p <- p + ggplot2::geom_vline(xintercept = 0, linewidth = 0.3, colour = "grey70", linetype = "dashed")
             
-            # Line through origin and reference category
+            # Line through origin and reference category (text colour of the
+            # jamovi theme, so that it is visible on a dark background too)
             p <- p + ggplot2::geom_abline(
                 slope = tan(theta),
                 intercept = 0,
-                colour = "black",
+                colour = .ctThemeColours(ggtheme)$text,
                 linewidth = 0.5
             )
             
@@ -4586,12 +4751,11 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
             # Theme
             p <- p + ggplot2::labs(title = title, x = xlab, y = ylab)
             p <- p + ggplot2::theme(
-                panel.background = ggplot2::element_rect(fill = "white", colour = NA),
                 panel.border = .ctFrameRect(ggtheme), axis.line = ggplot2::element_blank(),
                 panel.grid = ggplot2::element_blank(),
-                axis.title = ggplot2::element_text(size = 10, colour = "grey30"),
-                axis.text = ggplot2::element_text(size = 9, colour = "grey40"),
-                plot.title = ggplot2::element_text(size = 11, face = "bold", colour = "grey20", hjust = 0.5),
+                axis.title = ggplot2::element_text(size = 10),
+                axis.text = ggplot2::element_text(size = 9),
+                plot.title = ggplot2::element_text(size = 11, face = "bold", hjust = 0.5),
                 legend.position = "none"
             )
             
@@ -4606,7 +4770,7 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
             )
             p <- p + ggplot2::labs(caption = caption_text)
             p <- p + ggplot2::theme(
-                plot.caption = ggplot2::element_text(size = 8, colour = "grey50", hjust = 0)
+                plot.caption = ggplot2::element_text(size = 8, hjust = 0)
             )
             
             print(p)
@@ -4865,12 +5029,11 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
             # Theme
             p <- p + ggplot2::labs(title = title, x = xlab, y = ylab)
             p <- p + ggplot2::theme(
-                panel.background = ggplot2::element_rect(fill = "white", colour = NA),
                 panel.border = .ctFrameRect(ggtheme), axis.line = ggplot2::element_blank(),
                 panel.grid = ggplot2::element_blank(),
-                axis.title = ggplot2::element_text(size = 10, colour = "grey30"),
-                axis.text = ggplot2::element_text(size = 9, colour = "grey40"),
-                plot.title = ggplot2::element_text(size = 11, face = "bold", colour = "grey20", hjust = 0.5),
+                axis.title = ggplot2::element_text(size = 10),
+                axis.text = ggplot2::element_text(size = 9),
+                plot.title = ggplot2::element_text(size = 11, face = "bold", hjust = 0.5),
                 legend.position = if (self$options$showQuality) "right" else "none",
                 legend.background = ggplot2::element_rect(fill = "white", colour = NA)
             )
@@ -4908,7 +5071,7 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
             
             p <- p + ggplot2::labs(caption = caption_text)
             p <- p + ggplot2::theme(
-                plot.caption = ggplot2::element_text(size = 8, colour = "grey50", hjust = 0)
+                plot.caption = ggplot2::element_text(size = 8, hjust = 0)
             )
             
             print(p)
@@ -4977,14 +5140,13 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
             )
             
             p <- p + ggplot2::theme(
-                panel.background = ggplot2::element_rect(fill = "white", colour = NA),
                 panel.border = .ctFrameRect(ggtheme), axis.line = ggplot2::element_blank(),
-                panel.grid.major = ggplot2::element_line(colour = "grey90"),
+                panel.grid.major = ggplot2::element_line(),
                 panel.grid.minor = ggplot2::element_blank(),
-                axis.title = ggplot2::element_text(size = 10, colour = "grey30"),
-                axis.text = ggplot2::element_text(size = 9, colour = "grey40"),
-                plot.title = ggplot2::element_text(size = 11, face = "bold", colour = "grey20", hjust = 0.5),
-                plot.caption = ggplot2::element_text(size = 8, colour = "grey50", hjust = 0)
+                axis.title = ggplot2::element_text(size = 10),
+                axis.text = ggplot2::element_text(size = 9),
+                plot.title = ggplot2::element_text(size = 11, face = "bold", hjust = 0.5),
+                plot.caption = ggplot2::element_text(size = 8, hjust = 0)
             )
             
             p <- p + ggplot2::labs(
@@ -5044,14 +5206,13 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
                 title = "Attribute Influence on Row Configuration"
             ) +
             ggplot2::theme(
-                panel.background = ggplot2::element_rect(fill = "white", colour = NA),
                 panel.border = .ctFrameRect(ggtheme), axis.line = ggplot2::element_blank(),
-                panel.grid.major.x = ggplot2::element_line(colour = "grey90"),
+                panel.grid.major.x = ggplot2::element_line(),
                 panel.grid.minor = ggplot2::element_blank(),
                 panel.grid.major.y = ggplot2::element_blank(),
-                axis.title = ggplot2::element_text(size = 10, colour = "grey30"),
-                axis.text = ggplot2::element_text(size = 8, colour = "grey40"),
-                plot.title = ggplot2::element_text(size = 10, face = "bold", colour = "grey20", hjust = 0.5),
+                axis.title = ggplot2::element_text(size = 10),
+                axis.text = ggplot2::element_text(size = 8),
+                plot.title = ggplot2::element_text(size = 10, face = "bold", hjust = 0.5),
                 legend.position = "bottom",
                 legend.text = ggplot2::element_text(size = 8)
             )
@@ -5119,14 +5280,13 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
                 title = "Backward Elimination Sequence"
             ) +
             ggplot2::theme(
-                panel.background = ggplot2::element_rect(fill = "white", colour = NA),
                 panel.border = .ctFrameRect(ggtheme), axis.line = ggplot2::element_blank(),
-                panel.grid.major = ggplot2::element_line(colour = "grey90"),
+                panel.grid.major = ggplot2::element_line(),
                 panel.grid.minor = ggplot2::element_blank(),
-                axis.title = ggplot2::element_text(size = 10, colour = "grey30"),
-                axis.text = ggplot2::element_text(size = 9, colour = "grey40"),
-                plot.title = ggplot2::element_text(size = 10, face = "bold", colour = "grey20", hjust = 0.5),
-                plot.subtitle = ggplot2::element_text(size = 9, colour = "grey40", hjust = 0.5)
+                axis.title = ggplot2::element_text(size = 10),
+                axis.text = ggplot2::element_text(size = 9),
+                plot.title = ggplot2::element_text(size = 10, face = "bold", hjust = 0.5),
+                plot.subtitle = ggplot2::element_text(size = 9, hjust = 0.5)
             )
         
         print(p)
@@ -5371,14 +5531,13 @@ caClass <- if (requireNamespace('jmvcore', quietly = TRUE)) R6::R6Class(
         
         # Theme - matching Symmetric CA Plot exactly
         p <- p + ggplot2::theme(
-            panel.background = ggplot2::element_rect(fill = "white", colour = NA),
             panel.border = .ctFrameRect(ggtheme), axis.line = ggplot2::element_blank(),
             panel.grid = ggplot2::element_blank(),
-            axis.title = ggplot2::element_text(size = 10, colour = "grey30"),
-            axis.text = ggplot2::element_text(size = 9, colour = "grey40"),
-            plot.title = ggplot2::element_text(size = 11, face = "bold", colour = "grey20", hjust = 0.5),
-            plot.subtitle = ggplot2::element_text(size = 9, colour = "grey40", hjust = 0.5),
-            plot.caption = ggplot2::element_text(size = 8, colour = "grey50", hjust = 0),
+            axis.title = ggplot2::element_text(size = 10),
+            axis.text = ggplot2::element_text(size = 9),
+            plot.title = ggplot2::element_text(size = 11, face = "bold", hjust = 0.5),
+            plot.subtitle = ggplot2::element_text(size = 9, hjust = 0.5),
+            plot.caption = ggplot2::element_text(size = 8, hjust = 0),
             legend.position = "none"
         )
         

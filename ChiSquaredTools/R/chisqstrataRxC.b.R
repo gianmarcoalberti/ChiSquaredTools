@@ -911,8 +911,7 @@ chisqstrataRxCClass <- R6::R6Class(
       if (!is.null(pooledChiSq)) {
         table$setRow(rowKey = 'pooled', values = list(
           stratum = "Pooled (sum of partial)",
-          chisq = pooledChiSq$statistic, df = pooledChiSq$df, pvalue = pooledChiSq$pvalue,
-          v = '', vmax = '', vcorr = '', ciLower = '', ciUpper = ''
+          chisq = pooledChiSq$statistic, df = pooledChiSq$df, pvalue = pooledChiSq$pvalue
         ))
       }
       
@@ -1127,15 +1126,12 @@ chisqstrataRxCClass <- R6::R6Class(
           }
           table$setRow(rowKey = i, values = rowValues)
           
-          # Apply highlighting for significant residuals (|value| > 1.96)
+          # Mark residuals beyond \u00b11.96 with a footnote (native marker)
           for (j in 1:nCols) {
             value <- asr[i, j]
             if (!is.na(value) && abs(value) > 1.96) {
-              table$addFormat(
-                rowKey = i,
-                col = paste0('col', j),
-                format = jmvcore::Cell.NEGATIVE
-              )
+              table$addFootnote(rowKey = i, col = paste0('col', j), "|residual| > 1.96 (p < .05)")
+              table$addFormat(rowKey = i, col = paste0('col', j), format = jmvcore::Cell.NEGATIVE)   # red, kept pending the Phase 4 decision
             }
           }
         }
@@ -1222,8 +1218,10 @@ chisqstrataRxCClass <- R6::R6Class(
           )
         } else {
           stage1Text <- paste0(
-            "Neither the pooled chi-squared test nor the CMH test is significant: no evidence of an ",
-            "association between ", pairTxt, " within strata of '", strataVar, "'."
+            "Pooled chi-squared test not significant: no evidence of an ",
+            "association between ", pairTxt, " within strata of '", strataVar, "'. ",
+            "Because the strata are heterogeneous, the CMH test (", if (cmhSig) "significant" else "not significant",
+            "), which assumes a pattern common to all strata, is not used for this judgement."
           )
         }
       } else if (cmhSig) {
@@ -1256,7 +1254,9 @@ chisqstrataRxCClass <- R6::R6Class(
         recommendation <- paste0(
           "the association is present within strata, with no evidence that it differs across them. ",
           "The weighted average V corrected (", fmt3(weighted_vcorr),
-          "; 95% CI: ", fmt3(weightedCI$ci_lower), "\u2013", fmt3(weightedCI$ci_upper),
+          if (is.finite(weightedCI$ci_lower) && is.finite(weightedCI$ci_upper))
+            paste0("; 95% CI: ", fmt3(weightedCI$ci_lower), "\u2013", fmt3(weightedCI$ci_upper)) else
+            "; no bootstrap interval, every replicate was dropped",
           ") can be used as a summary.",
           if (is.finite(marginalVcorr)) paste0(
             " Compare it with the marginal V corrected (", fmt3(marginalVcorr), "): a clear ",
@@ -1282,8 +1282,9 @@ chisqstrataRxCClass <- R6::R6Class(
       } else {
         scenario <- "Heterogeneous Pattern Without Overall Association"
         recommendation <- paste0(
-          "the homogeneity test indicates that the strata differ, but neither the pooled nor the CMH ",
-          "test finds an association within strata. This may reflect insufficient power. ",
+          "the homogeneity test indicates that the strata differ, but the pooled chi-squared test, used in ",
+          "place of the CMH test when the strata are heterogeneous, finds no association within them. ",
+          "This may reflect insufficient power. ",
           "Examine the stratum-specific chi-squared tests and residuals."
         )
       }
@@ -1402,8 +1403,9 @@ chisqstrataRxCClass <- R6::R6Class(
       
       html <- paste0(html, "
         <h3 style='color: #2874A6; margin-top: 1.5em;'>Generalised Cochran-Mantel-Haenszel (CMH) Test</h3>
-        <p>The CMH test generalises to R\u00D7C\u00D7K tables, testing conditional independence 
-        across all strata. The null hypothesis states that there is no association between 
+        <p>The CMH test generalises to R\u00D7C\u00D7K tables (Landis, Heyman & Koch 1978; the 
+        general-association statistic computed by R's <code>mantelhaen.test()</code>), testing conditional 
+        independence across all strata. The null hypothesis states that there is no association between 
         the row and column variables in any stratum. It does not test whether the association is 
         the same across strata, which is the job of the log-linear homogeneity test.</p>
         
@@ -1530,9 +1532,11 @@ chisqstrataRxCClass <- R6::R6Class(
                      "Ott et al. (1992) for controlling for a third variable when analysing nominal variables ",
                      "with three or more categories. While Ott et al. recommend measures such as Goodman and ",
                      "Kruskal's lambda for larger tables (since Yule's Q is limited to 2\u00D72 tables), this facility ",
-                     "employs Cram\u00E9r's V corrected as the association measure. The pooled chi-squared approach described by Ott et al. ",
-                     "for testing conditional independence is equivalent to the generalised Cochran-Mantel-Haenszel ",
-                     "test implemented here.</p>")
+                     "employs Cram\u00E9r's V corrected as the association measure. The pooled chi-squared test described by Ott et al. ",
+                     "(the sum of the stratum chi-squared statistics, with the sum of their degrees of freedom) and the ",
+                     "generalised Cochran-Mantel-Haenszel test (Landis, Heyman & Koch 1978) share the null hypothesis of ",
+                     "conditional independence but are different statistics, as explained above: the generalised CMH test ",
+                     "is aimed at a common pattern of association across strata, the pooled test is not. Both are reported here.</p>")
       
       html <- paste0(html, "</div>")
       
@@ -1716,6 +1720,10 @@ chisqstrataRxCClass <- R6::R6Class(
         stringsAsFactors = FALSE
       )
       
+      # Text colour and background follow the jamovi theme (light or dark);
+      # the node boxes keep their own fills, with text drawn on top of them
+      thm <- .ctThemeColours(ggtheme)
+      
       # Colour coding: active path in blue, inactive greyed out
       nodes$fill_color <- ifelse(nodes$is_active & nodes$node_type == "terminal",
                                  "#2874A6",  # Active terminal: blue
@@ -1726,7 +1734,7 @@ chisqstrataRxCClass <- R6::R6Class(
       nodes$text_color <- ifelse(nodes$is_active & nodes$node_type == "terminal",
                                  "white", "#2C3E50")
       
-      edges$line_color <- ifelse(edges$is_active, "#2C3E50", "#D5DBDB")
+      edges$line_color <- ifelse(edges$is_active, thm$text, "#95A5A6")
       edges$line_width <- ifelse(edges$is_active, 1.2, 0.6)
       
       # Create plot
@@ -1742,7 +1750,7 @@ chisqstrataRxCClass <- R6::R6Class(
         # Edge labels
         ggplot2::geom_text(data = edges,
                            ggplot2::aes(x = (x + xend) / 2, y = (y + yend) / 2, label = label),
-                           size = 2.9, hjust = 0.5, vjust = -0.5, color = "#2C3E50") +
+                           size = 2.9, hjust = 0.5, vjust = -0.5, color = thm$text) +
         
         # Draw nodes (rectangles)
         # Terminal nodes get extra width for longer text
@@ -1776,10 +1784,11 @@ chisqstrataRxCClass <- R6::R6Class(
         # Theme
         ggplot2::theme_void() +
         ggplot2::theme(
+          plot.background = ggplot2::element_rect(fill = thm$background, colour = NA),
           plot.title = ggplot2::element_text(hjust = 0.5, size = 13, face = "bold",
-                                             margin = ggplot2::margin(b = 5)),
+                                             colour = thm$text, margin = ggplot2::margin(b = 5)),
           plot.subtitle = ggplot2::element_text(hjust = 0.5, size = 11, 
-                                                color = "#2874A6", face = "bold",
+                                                colour = "#2874A6", face = "bold",
                                                 margin = ggplot2::margin(b = 10))
         )
       

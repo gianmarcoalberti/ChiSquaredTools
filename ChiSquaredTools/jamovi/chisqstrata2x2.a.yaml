@@ -22,8 +22,9 @@ description:
         - Woolf's test for homogeneity of odds ratios
         - Breslow-Day-Tarone (BDT) test for homogeneity of odds ratios
         
-        The analysis provides automated interpretation based on four diagnostic
-        scenarios that consider the joint pattern of test results. When cell counts
+        The analysis provides automated interpretation based on ten diagnostic
+        scenarios that consider the joint pattern of the marginal chi-squared test,
+        the pooled (within-strata) chi-squared test, the CMH test and the BDT test. When cell counts
         contain zeros, the Haldane-Anscombe correction (adding 0.5 to all cells)
         is applied to the stratum-specific and marginal odds ratios and in Woolf's
         test; the Mantel-Haenszel common odds ratio uses the observed counts.

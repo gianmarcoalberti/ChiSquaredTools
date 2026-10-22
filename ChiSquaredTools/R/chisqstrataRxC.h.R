@@ -209,7 +209,7 @@ chisqstrataRxCResults <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Cl
                         `type`="number"),
                     list(
                         `name`="vcorr", 
-                        `title`="V corr", 
+                        `title`="V corrected", 
                         `type`="number"),
                     list(
                         `name`="ciLower", 
@@ -269,7 +269,8 @@ chisqstrataRxCResults <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Cl
                         `type`="number", 
                         `format`="zto,pvalue")),
                 refs=list(
-                    "azen2021")))
+                    "azen2021",
+                    "landis1978")))
             self$add(jmvcore::Table$new(
                 options=options,
                 name="homogeneityTable",
@@ -440,12 +441,16 @@ chisqstrataRxCBase <- if (requireNamespace("jmvcore", quietly=TRUE)) R6::R6Class
 #'   bootstrap 95\% confidence intervals
 #' - Generalised Cochran-Mantel-Haenszel (CMH) test for conditional 
 #' independence
-#' - Log-linear likelihood ratio test for homogeneity of association patterns
+#' - Pooled within-strata chi-squared test, used in place of the CMH test
+#'   when the strata are heterogeneous
+#' - Log-linear likelihood ratio test for homogeneity of association patterns,
+#'   with a check for reversal of the residual pattern across strata
 #' - Weighted average of V corrected across strata (when homogeneity holds)
 #' 
 #' The analysis provides automated interpretation based on the joint pattern 
 #' of test results, distinguishing between conditional independence, 
-#' homogeneous association, and effect modification (interaction).
+#' homogeneous association, effect modification (interaction) and a 
+#' heterogeneous pattern without overall association.
 #' 
 #' For 2×2 tables, use the dedicated "Stratified Analysis (2×2×K)" facility, 
 #' which provides odds ratios and specialised homogeneity tests.

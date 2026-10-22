@@ -434,7 +434,6 @@ chisqtestClass <- R6::R6Class(
           method = 'Traditional χ²',
           statistic = chisq_stat,
           df = df,
-          mstat = '',
           pvalue = p_value
         ))
       }
@@ -447,7 +446,6 @@ chisqtestClass <- R6::R6Class(
           method = '(N-1)/N adjusted χ²',
           statistic = chisq_adj,
           df = df,
-          mstat = '',
           pvalue = p_adj
         ))
       }
@@ -471,8 +469,29 @@ chisqtestClass <- R6::R6Class(
         table$setNote(key = "rounded", note = NULL, init = FALSE)
       }
       
+      # Rounding can empty a row or column (e.g. weighted counts 0.4 and 0.3
+      # pass the empty-margin check on the raw table but round to zeros).
+      # Neither resampling test can run on such a table, so both are
+      # skipped with a note instead of looping on degenerate draws.
+      rs_degenerate <- n_rs < 2 || any(rowSums(obs_rs) == 0) || any(colSums(obs_rs) == 0)
+      if (rs_degenerate && (self$options$permTest || self$options$monteCarloTest)) {
+        table$setNote(key = "rs_degenerate", note = paste0(
+          "After rounding to whole numbers the table has an empty row or column ",
+          "(or fewer than two cases), so the permutation and Monte Carlo tests cannot be run."), init = FALSE)
+        if (self$options$permTest)
+          table$setRow(rowKey = 'permutation', values = list(
+            method = paste0('Permutation (', self$options$nPerms, ' permutations)'),
+            statistic = NA, df = NA, mstat = NA, pvalue = NA))
+        if (self$options$monteCarloTest)
+          table$setRow(rowKey = 'montecarlo', values = list(
+            method = paste0('Monte Carlo (', self$options$nPerms, ' simulations)'),
+            statistic = NA, df = NA, mstat = NA, pvalue = NA))
+      } else {
+        table$setNote(key = "rs_degenerate", note = NULL, init = FALSE)
+      }
+      
       # Permutation test
-      if (self$options$permTest) {
+      if (self$options$permTest && !rs_degenerate) {
         
         # Check cache first
         if (!is.null(private$.permStats)) {
@@ -517,20 +536,18 @@ chisqtestClass <- R6::R6Class(
           method = paste0('Permutation (', self$options$nPerms, ' permutations)'),
           statistic = stat_rs,
           df = df,
-          mstat = '',
           pvalue = p_perm
         ))
       }
       
       # Monte Carlo test
-      if (self$options$monteCarloTest) {
+      if (self$options$monteCarloTest && !rs_degenerate) {
         
         # Check cache first
         if (!is.null(private$.mcStats)) {
           # Already restored from cache above
           mc_stats <- private$.mcStats
-          B_extreme <- sum(mc_stats >= stat_rs)
-          p_mc <- (B_extreme + 1) / (length(mc_stats) + 1)
+          p_mc <- if (length(mc_stats) > 0) (sum(mc_stats >= stat_rs) + 1) / (length(mc_stats) + 1) else NA_real_
 
         } else {
           # No cache - run expensive computation
@@ -547,56 +564,76 @@ chisqtestClass <- R6::R6Class(
           # equivalent to one multinomial draw, which is far faster for large n
           cell_probs <- as.vector(outer(row_probs, col_probs))
           n_mc <- n_rs
-          n_redrawn <- 0
+          n_redrawn <- 0   # tables with an empty row or column that were redrawn
+          n_dropped <- 0   # replicates abandoned after 1000 failed draws
           
           for (b in 1:B) {
             # A simulated table with an empty row or column has no chi-squared
             # statistic on the observed table's dimensions; such tables are
-            # redrawn, so the reference distribution is conditional on every
-            # row and column being non-empty (as in the observed table)
+            # redrawn (up to 1000 times), so the reference distribution is
+            # conditional on every row and column being non-empty, as in the
+            # observed table. A replicate that cannot be drawn is dropped; if
+            # the very first replicate fails, the table is too sparse for the
+            # test and the loop stops at once.
+            drawn <- FALSE
             for (attempt in 1:1000) {
               mc_table <- matrix(stats::rmultinom(1, n_mc, cell_probs),
                                  nrow = nrow(obs_rs), ncol = ncol(obs_rs))
               mc_row_totals <- rowSums(mc_table)
               mc_col_totals <- colSums(mc_table)
-              if (all(mc_row_totals > 0) && all(mc_col_totals > 0)) break
+              if (all(mc_row_totals > 0) && all(mc_col_totals > 0)) { drawn <- TRUE; break }
               n_redrawn <- n_redrawn + 1
             }
-            if (any(mc_row_totals == 0) || any(mc_col_totals == 0)) {
+            if (!drawn) {
+              n_dropped <- n_dropped + 1
               mc_stats[b] <- NA_real_
+              if (b == 1) { mc_stats[] <- NA_real_; n_dropped <- B; break }
               next
             }
             mc_expected <- outer(mc_row_totals, mc_col_totals) / n_mc
             mc_stats[b] <- sum((mc_table - mc_expected)^2 / mc_expected)
           }
           mc_stats <- mc_stats[!is.na(mc_stats)]
-          B <- length(mc_stats)
+          B_kept <- length(mc_stats)
           
-          B_extreme <- sum(mc_stats >= stat_rs)
-          p_mc <- (B_extreme + 1) / (B + 1)
+          p_mc <- if (B_kept > 0) (sum(mc_stats >= stat_rs) + 1) / (B_kept + 1) else NA_real_
           
           private$.mcStats <- mc_stats
           mcImage$setState(list(mc_stats = mc_stats, p_mc = p_mc,
-                                observed = stat_rs, n_redrawn = n_redrawn))
+                                observed = stat_rs, n_redrawn = n_redrawn,
+                                n_dropped = n_dropped))
         }
         
         n_redrawn <- mcImage$state$n_redrawn
-        if (isTRUE(n_redrawn > 0)) {
-          table$setNote(key = "mc_redraw", note = sprintf(
-            "Monte Carlo: %d simulated table(s) with an empty row or column were redrawn.", n_redrawn), init = FALSE)
+        n_dropped <- mcImage$state$n_dropped
+        if (is.null(n_dropped)) n_dropped <- 0   # states saved by earlier versions
+        B_kept <- length(mc_stats)
+        # nothing to draw: hide the distribution plot rather than leave an empty frame
+        mcImage$setVisible(B_kept > 0 && self$options$showDistributions)
+        if (B_kept == 0) {
+          table$setNote(key = "mc_redraw", note = paste0(
+            "Monte Carlo: no simulated table with all rows and columns non-empty could be drawn ",
+            "in 1000 attempts; the table is too sparse for this test."), init = FALSE)
+        } else if (n_dropped > 0 || isTRUE(n_redrawn > 0)) {
+          table$setNote(key = "mc_redraw", note = paste0(
+            "Monte Carlo: ", n_redrawn, " simulated table(s) with an empty row or column were redrawn",
+            if (n_dropped > 0) paste0("; ", n_dropped, " replicate(s) could not be drawn in 1000 attempts and were dropped, ",
+                                      "so the p-value is based on ", B_kept, " simulations") else "",
+            "."), init = FALSE)
         } else {
           table$setNote(key = "mc_redraw", note = NULL, init = FALSE)
         }
         table$setRow(rowKey = 'montecarlo', values = list(
-          method = paste0('Monte Carlo (', self$options$nPerms, ' simulations)'),
-          statistic = stat_rs,
+          method = if (B_kept == self$options$nPerms)
+            paste0('Monte Carlo (', B_kept, ' simulations)')
+          else paste0('Monte Carlo (', B_kept, ' of ', self$options$nPerms, ' simulations)'),
+          statistic = if (B_kept > 0) stat_rs else NA,
           df = df,
-          mstat = '',
           pvalue = p_mc
         ))
       }
       
-      if (!self$options$monteCarloTest)
+      if (!self$options$monteCarloTest || rs_degenerate)
         table$setNote(key = "mc_redraw", note = NULL, init = FALSE)
       
       # M Test (Fuchs & Kenett, 1980)
@@ -639,8 +676,6 @@ chisqtestClass <- R6::R6Class(
         
         table$setRow(rowKey = 'mtest', values = list(
           method = 'M Test',
-          statistic = '',
-          df = '',
           mstat = M_stat,
           pvalue = p_m
         ))
@@ -770,7 +805,10 @@ chisqtestClass <- R6::R6Class(
                        "null hypothesis of independence (", self$options$nPerms, " simulated tables): each table distributes the N cases over the cells ",
                        "with probabilities equal to the products of the observed row and column proportions (a parametric bootstrap of the independence model). ",
                        "Only the total N is held fixed, so, unlike the permutation test, which keeps both sets of margins fixed, the row and column totals vary from table to table. ",
-                       "Simulated tables with an empty row or column are redrawn. For each simulated table, the chi-squared statistic ",
+                       "Simulated tables with an empty row or column are redrawn (up to 1,000 times per replicate); a replicate that cannot be drawn is dropped and the ",
+                       "p-value is based on the replicates retained, which the table reports; if no valid table can be drawn at all, the test is not run. ",
+                       "Counts that are not whole numbers are rounded for this test and for the permutation test, and if the rounded table has an empty row or column neither test is run. ",
+                       "For each simulated table, the chi-squared statistic ",
                        "is calculated, creating an empirical null distribution. The p-value represents the proportion of simulated statistics ",
                        "at least as extreme as the observed statistic, computed as (B + 1)/(m + 1) following Phipson & Smyth 2010, ",
                        "which avoids p-values of exactly zero.</p>")

@@ -22,6 +22,7 @@ refs:
         year: 2024
         title: 'From Data to Insights. A Beginner''s Guide to Cross-Tabulation Analysis'
         publisher: 'Chapman & Hall'
+        url: 'https://doi.org/10.1201/9781032726328'
 
     azen2021:
         type: 'book'
@@ -30,6 +31,18 @@ refs:
         title: 'Categorical Data Analysis for the Behavioral and Social Sciences'
         publisher: 'Routledge'
         edition: '2nd'
+        url: 'https://doi.org/10.4324/9780429330308'
+
+    beasley1995:
+        type: 'article'
+        author: 'Beasley, T. M., & Schumacker, R. E.'
+        year: 1995
+        title: 'Multiple regression approach to analyzing contingency tables: Post hoc and planned comparison procedures'
+        publisher: 'The Journal of Experimental Education'
+        volume: 64
+        issue: 1
+        pages: '79-93'
+        url: 'https://doi.org/10.1080/00220973.1995.9943797'
 
     beh2012:
         type: 'article'
@@ -39,6 +52,7 @@ refs:
         publisher: 'Journal of Statistical Planning and Inference'
         volume: 142
         pages: '965-973'
+        url: 'https://doi.org/10.1016/j.jspi.2011.11.004'
 
     beh2014:
         type: 'book'
@@ -55,6 +69,7 @@ refs:
         publisher: 'Computational Statistics and Data Analysis'
         volume: 128
         pages: '73-86'
+        url: 'https://doi.org/10.1016/j.csda.2018.06.012'
 
     bergsma2013:
         type: 'article'
@@ -65,6 +80,7 @@ refs:
         volume: 42
         issue: 3
         pages: '323-328'
+        url: 'https://doi.org/10.1016/j.jkss.2012.10.002'
 
     berry2018:
         type: 'book'
@@ -72,6 +88,7 @@ refs:
         year: 2018
         title: 'The Measurement of Association: A Permutation Statistical Approach'
         publisher: 'Springer'
+        url: 'https://doi.org/10.1007/978-3-319-98926-6'
 
     bishop2007:
         type: 'book'
@@ -86,6 +103,7 @@ refs:
         year: 2003
         title: 'Analyzing Quantitative Data: From Description to Explanation'
         publisher: 'SAGE Publications Ltd'
+        url: 'https://doi.org/10.4135/9781849208604'
 
     blalock1979:
         type: 'book'
@@ -104,6 +122,7 @@ refs:
         volume: 35
         issue: 3
         pages: '429-446'
+        url: 'https://doi.org/10.1177/0049124106292358'
         
     borggroenen2005:
         type: 'book'
@@ -120,6 +139,17 @@ refs:
         title: 'Statistical Methods in Cancer Research. Volume I: The Analysis of Case-Control Studies'
         publisher: 'IARC Scientific Publications'
 
+    tarone1985:
+        type: 'article'
+        author: 'Tarone, R. E.'
+        year: 1985
+        title: 'On heterogeneity tests based on efficient scores'
+        publisher: 'Biometrika'
+        volume: 72
+        issue: 1
+        pages: '91-95'
+        url: 'https://doi.org/10.1093/biomet/72.1.91'
+
     bruner1976:
         type: 'article'
         author: 'Bruner, J.'
@@ -129,6 +159,7 @@ refs:
         volume: 20
         issue: 4
         pages: '781-804'
+        url: 'https://doi.org/10.2307/2110573'
 
     buchanan1974:
         type: 'article'
@@ -139,6 +170,7 @@ refs:
         volume: 18
         issue: 3
         pages: '625-646'
+        url: 'https://doi.org/10.2307/2110637'
 
     campbell2007:
         type: 'article'
@@ -149,6 +181,7 @@ refs:
         volume: 26
         issue: 19
         pages: '3661-3675'
+        url: 'https://doi.org/10.1002/sim.2832'
 
     cibois1993:
         type: 'article'
@@ -158,6 +191,7 @@ refs:
         publisher: 'Bulletin de Méthodologie Sociologique'
         volume: 40
         pages: '43-63'
+        url: 'https://doi.org/10.1177/075910639304000103'
 
     cohen1988:
         type: 'book'
@@ -166,6 +200,7 @@ refs:
         title: 'Statistical Power Analysis for the Behavioral Sciences'
         publisher: 'Erlbaum'
         edition: '2nd'
+        url: 'https://doi.org/10.4324/9780203771587'
 
     cohen1992:
         type: 'article'
@@ -176,6 +211,7 @@ refs:
         volume: 112
         issue: 1
         pages: '155-159'
+        url: 'https://doi.org/10.1037/0033-2909.112.1.155'
 
     cole1949:
         type: 'article'
@@ -186,6 +222,7 @@ refs:
         volume: 30
         issue: 4
         pages: '411-424'
+        url: 'https://doi.org/10.2307/1932444'
 
     cramer1946:
         type: 'book'
@@ -193,6 +230,7 @@ refs:
         year: 1946
         title: 'Mathematical Methods of Statistics'
         publisher: 'Princeton University Press'
+        url: 'https://doi.org/10.1515/9781400883868'
 
     cummingfinch2005:
         type: 'article'
@@ -203,6 +241,7 @@ refs:
         volume: 60
         issue: 2
         pages: '170-180'
+        url: 'https://doi.org/10.1037/0003-066x.60.2.170'
 
     cureton1959:
         type: 'article'
@@ -223,6 +262,7 @@ refs:
         volume: 51
         issue: 4
         pages: '821-828'
+        url: 'https://doi.org/10.1177/001316449105100403'
 
     davis1971:
         type: 'book'
@@ -230,6 +270,14 @@ refs:
         year: 1971
         title: 'Elementary Survey Analysis'
         publisher: 'Prentice Hall'
+
+    efron1993:
+        type: 'book'
+        author: 'Efron, B., & Tibshirani, R. J.'
+        year: 1993
+        title: 'An Introduction to the Bootstrap'
+        publisher: 'Chapman and Hall'
+        url: 'https://doi.org/10.1201/9780429246593'
 
     ferguson2009:
         type: 'article'
@@ -240,6 +288,7 @@ refs:
         volume: 40
         issue: 5
         pages: '532-538'
+        url: 'https://doi.org/10.1037/a0015808'
 
     fienberg1971:
         type: 'article'
@@ -250,6 +299,7 @@ refs:
         volume: 1
         issue: 2
         pages: '305-315'
+        url: 'https://doi.org/10.2307/202645'
 
     fleiss2003:
         type: 'book'
@@ -258,6 +308,7 @@ refs:
         title: 'Statistical Methods for Rates and Proportions'
         publisher: 'Wiley'
         edition: '3rd'
+        url: 'https://doi.org/10.1002/0471445428'
 
     fuchs1980:
         type: 'article'
@@ -268,6 +319,7 @@ refs:
         volume: 75
         issue: 370
         pages: '395-398'
+        url: 'https://doi.org/10.1080/01621459.1980.10477483'
         
     gambirasio2019:
         type: 'preprint'
@@ -286,7 +338,7 @@ refs:
         volume: 63
         issue: 5
         pages: '825-839'
-    
+        url: 'https://doi.org/10.1177/0013164403251280'
     good1956:
         type: 'article'
         author: 'Good, I. J.'
@@ -296,6 +348,7 @@ refs:
         volume: 18
         issue: 1
         pages: '113-124'
+        url: 'https://doi.org/10.1111/j.2517-6161.1956.tb00216.x'
 
     goodman1954:
         type: 'article'
@@ -306,6 +359,18 @@ refs:
         volume: 49
         issue: 268
         pages: '732-764'
+        url: 'https://doi.org/10.2307/2281536'
+
+    goodman1963:
+        type: 'article'
+        author: 'Goodman, L. A., & Kruskal, W. H.'
+        year: 1963
+        title: 'Measures of association for cross classifications III: Approximate sampling theory'
+        publisher: 'Journal of the American Statistical Association'
+        volume: 58
+        issue: 302
+        pages: '310-364'
+        url: 'https://doi.org/10.1080/01621459.1963.10500850'
 
     goodman1972:
         type: 'article'
@@ -316,6 +381,7 @@ refs:
         volume: 67
         issue: 338
         pages: '415-421'
+        url: 'https://doi.org/10.1080/01621459.1972.10482401'
 
     goodman1979:
         type: 'book'
@@ -323,6 +389,7 @@ refs:
         year: 1979
         title: 'Measures of Association for Cross Classifications'
         publisher: 'Springer-Verlag'
+        url: 'https://doi.org/10.1007/978-1-4612-9995-0'
 
     greenacre1984:
         type: 'book'
@@ -340,6 +407,18 @@ refs:
         publisher: 'Journal of Classification'
         volume: 5
         pages: '39-51'
+        url: 'https://doi.org/10.1007/bf01901670'
+
+    greenacre2013:
+        type: 'article'
+        author: 'Greenacre, M.'
+        year: 2013
+        title: 'Contribution biplots'
+        publisher: 'Journal of Computational and Graphical Statistics'
+        volume: 22
+        issue: 1
+        pages: '107-122'
+        url: 'https://doi.org/10.1080/10618600.2012.702494'
 
     greenacre2017:
         type: 'book'
@@ -365,6 +444,7 @@ refs:
         volume: 29
         issue: 1
         pages: '205-220'
+        url: 'https://doi.org/10.2307/2529686'
 
     hirotsu1983:
         type: 'article'
@@ -375,6 +455,7 @@ refs:
         volume: 70
         issue: 3
         pages: '579-589'
+        url: 'https://doi.org/10.2307/2336493'
 
     hoenig2001:
         type: 'article'
@@ -385,6 +466,7 @@ refs:
         volume: 55
         issue: 1
         pages: '19-24'
+        url: 'https://doi.org/10.1198/000313001300339897'
 
     howell2011:
         type: 'book'
@@ -402,6 +484,7 @@ refs:
         edition: 2nd
         publisher: CRC Press
         address: Boca Raton, FL
+        url: 'https://doi.org/10.1201/b21874'
 
     kendall1961:
         type: 'book'
@@ -418,6 +501,7 @@ refs:
         publisher: 'Journal of the American Statistical Association'
         volume: 75
         pages: '336-344'
+        url: 'https://doi.org/10.1080/01621459.1980.10477473'
 
     krzanowski1993:
         type: 'article'
@@ -428,6 +512,7 @@ refs:
         volume: 42
         issue: 3
         pages: '529-541'
+        url: 'https://doi.org/10.2307/2986330'
 
     kvalseth2018a:
         type: 'article'
@@ -438,6 +523,7 @@ refs:
         volume: 47
         issue: 23
         pages: '5662-5674'
+        url: 'https://doi.org/10.1080/03610926.2017.1400056'
 
     kvalseth2018b:
         type: 'article'
@@ -448,7 +534,7 @@ refs:
         volume: 45
         issue: 6
         pages: '1118-1132'
-        
+        url: 'https://doi.org/10.1080/02664763.2017.1346066'
     kroonenberglombardo1999:
         type: 'article'
         author: 'Kroonenberg, P. M., & Lombardo, R.'
@@ -458,6 +544,18 @@ refs:
         volume: 34
         issue: 3
         pages: '367-396'
+        url: 'https://doi.org/10.1207/s15327906mbr3403_4'
+
+    landis1978:
+        type: 'article'
+        author: 'Landis, J. R., Heyman, E. R., & Koch, G. G.'
+        year: 1978
+        title: 'Average partial association in three-way contingency tables: A review and discussion of alternative tests'
+        publisher: 'International Statistical Review'
+        volume: 46
+        issue: 3
+        pages: '237-254'
+        url: 'https://doi.org/10.2307/1402373'
 
     lachin2000:
         type: 'book'
@@ -465,7 +563,7 @@ refs:
         year: 2000
         title: 'Biostatistical Methods: The Assessment of Relative Risks'
         publisher: 'Wiley'
-        
+        url: 'https://doi.org/10.1002/9780470317051'
     lefevrechampely2009:
         type: 'article'
         author: 'Lefèvre, B., & Champely, S.'
@@ -485,6 +583,7 @@ refs:
         volume: 25
         issue: 3
         pages: '438-458'
+        url: 'https://doi.org/10.1080/10543406.2014.920851'
 
     liu1980:
         type: 'article'
@@ -495,7 +594,18 @@ refs:
         volume: 13
         issue: 1
         pages: '3-8'
-        
+        url: 'https://doi.org/10.1007/bf00975772'
+    mantelhaenszel1959:
+        type: 'article'
+        author: 'Mantel, N., & Haenszel, W.'
+        year: 1959
+        title: 'Statistical aspects of the analysis of data from retrospective studies of disease'
+        publisher: 'Journal of the National Cancer Institute'
+        volume: 22
+        issue: 4
+        pages: '719-748'
+        url: 'https://doi.org/10.1093/jnci/22.4.719'
+
     mirkin2001:
         type: 'article'
         author: 'Mirkin, B.'
@@ -505,6 +615,7 @@ refs:
         volume: 55
         issue: 2
         pages: '111-120'
+        url: 'https://doi.org/10.1198/000313001750358428'
 
     mirkin2023:
         type: 'book'
@@ -520,6 +631,7 @@ refs:
         year: 1985
         title: 'Identifying extreme cells in a sizable contingency table: Probabilistic and exploratory approaches. In D. C. Hoaglin, F. Mosteller, & J. W. Tukey (Eds.), Exploring Data Tables, Trends, and Shapes (pp. 189-224)'
         publisher: 'Wiley'
+        url: 'https://doi.org/10.1002/9781118150702.ch5'
 
     mueller1961:
         type: 'book'
@@ -537,6 +649,7 @@ refs:
         volume: 8
         issue: 3
         pages: 'e58777'
+        url: 'https://doi.org/10.1371/journal.pone.0058777'
 
     ortontyers1991:
         type: 'article'
@@ -579,6 +692,7 @@ refs:
         volume: 9
         issue: 1
         pages: 'Article 39'
+        url: 'https://doi.org/10.2202/1544-6115.1585'
 
     rasch2011:
         type: 'book'
@@ -586,6 +700,7 @@ refs:
         year: 2011
         title: 'Statistics in Psychology Using R and SPSS'
         publisher: 'Wiley'
+        url: 'https://doi.org/10.1002/9781119979630'
 
     ratliff1982:
         type: 'article'
@@ -596,6 +711,7 @@ refs:
         volume: 63
         issue: 5
         pages: '1605-1606'
+        url: 'https://doi.org/10.2307/1938884'
 
     reynolds1977:
         type: 'book'
@@ -613,6 +729,7 @@ refs:
         volume: 91
         issue: 2
         pages: '418-423'
+        url: 'https://doi.org/10.1037/0033-2909.91.2.418'
 
     richardson2011:
         type: 'article'
@@ -623,6 +740,7 @@ refs:
         volume: 30
         issue: 8
         pages: '890'
+        url: 'https://doi.org/10.1002/sim.4116'
 
     roscoe1971:
         type: 'article'
@@ -633,6 +751,7 @@ refs:
         volume: 66
         issue: 336
         pages: '755-759'
+        url: 'https://doi.org/10.1080/01621459.1971.10482341'
 
     sakoda1981:
         type: 'article'
@@ -643,6 +762,7 @@ refs:
         volume: 18
         issue: 2
         pages: '245-250'
+        url: 'https://doi.org/10.2307/2061096'
 
     saporta2006:
         type: 'book'
@@ -669,6 +789,7 @@ refs:
         volume: 30
         issue: 3
         pages: '339-345'
+        url: 'https://doi.org/10.1080/00401706.1988.10488407'
     
     simonoff2003:
         type: 'book'
@@ -676,6 +797,7 @@ refs:
         year: 2003
         title: 'Analyzing Categorical Data'
         publisher: 'Springer'
+        url: 'https://doi.org/10.1007/978-0-387-21727-7'
 
     smith1976:
         type: 'article'
@@ -686,6 +808,7 @@ refs:
         volume: 54
         issue: 3
         pages: '669-693'
+        url: 'https://doi.org/10.2307/2576289'
 
     smithson2003:
         type: 'book'
@@ -693,6 +816,7 @@ refs:
         year: 2003
         title: 'Confidence Intervals'
         publisher: 'Sage'
+        url: 'https://doi.org/10.4135/9781412983761'
 
     upton1982:
         type: 'article'
@@ -703,6 +827,7 @@ refs:
         volume: 145
         issue: 1
         pages: '86-105'
+        url: 'https://doi.org/10.2307/2981423'
 
     utts2014:
         type: 'book'
@@ -721,6 +846,7 @@ refs:
         volume: 2
         issue: 4
         pages: '243-266'
+        url: 'https://doi.org/10.1207/s15328031us0204_02'
 
     ward1963:
         type: 'article'
@@ -731,6 +857,7 @@ refs:
         volume: 58
         issue: 301
         pages: '236-244'
+        url: 'https://doi.org/10.1080/01621459.1963.10500845'
 
     warrens2008:
         type: 'article'
@@ -748,6 +875,7 @@ refs:
         title: 'An Introduction to Correspondence Analysis'
         publisher: 'The Mathematica Journal'
         volume: 12
+        url: 'https://doi.org/10.3888/tmj.12-4'
 
     yule1912:
         type: 'article'
@@ -758,6 +886,7 @@ refs:
         volume: 75
         issue: 6
         pages: '579-652'
+        url: 'https://doi.org/10.2307/2340126'
 
     zar2014:
         type: 'book'
@@ -775,6 +904,7 @@ refs:
         publisher: 'Annals of Human Genetics'
         volume: 19
         pages: '251-253'
+        url: 'https://doi.org/10.1111/j.1469-1809.1955.tb01348.x'
 
     zysno1997:
         type: 'article'

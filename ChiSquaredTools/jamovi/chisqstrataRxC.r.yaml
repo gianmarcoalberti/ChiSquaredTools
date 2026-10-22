@@ -58,7 +58,7 @@ items:
           title: 'V max'
           type: number
         - name: vcorr
-          title: 'V corr'
+          title: 'V corrected'
           type: number
         - name: ciLower
           title: 'Lower'
@@ -113,6 +113,7 @@ items:
           format: zto,pvalue
       refs:
        - azen2021
+       - landis1978
 
     - name: homogeneityTable
       title: Test for Homogeneity of Association

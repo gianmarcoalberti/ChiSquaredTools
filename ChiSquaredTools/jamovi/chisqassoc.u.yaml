@@ -183,15 +183,15 @@ children:
         children:
           - type: LevelSelector
             name: rowRef
-            label: Row category of interest (OR, 2×2 only)
-            enable: (marginFree)
+            label: Row category of interest (2×2 signed measures)
+            enable: (marginFree || phiSigned || coleC7 || zysnoPhi)
       - type: LayoutBox
         margin: normal
         children:
           - type: LevelSelector
             name: colRef
-            label: Column category of interest (OR, 2×2 only)
-            enable: (marginFree)
+            label: Column category of interest (2×2 signed measures)
+            enable: (marginFree || phiSigned || coleC7 || zysnoPhi)
   - type: CollapseBox
     label: PRE Measures
     collapsed: true
@@ -213,14 +213,16 @@ children:
         format: number
         suffix: '%'
       - type: Label
-        label: Bootstrap (see table note for applicable measures)
+        label: Bootstrap intervals (corrected measures, W-hat, Sakoda's D)
         children:
           - type: TextBox
             name: bootstrapReps
             format: number
+            enable: (phiCorrected || cAdjusted || cCorrected || vCorrected || wHat || wHatCorrected || sakoda || sakodaCorrected)
           - type: TextBox
             name: seed
             format: number
+            enable: (phiCorrected || cAdjusted || cCorrected || vCorrected || wHat || wHatCorrected || sakoda || sakodaCorrected)
   - type: CollapseBox
     label: Display Options
     collapsed: true
